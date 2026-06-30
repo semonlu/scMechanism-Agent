@@ -48,6 +48,7 @@ Start every task by determining which of these modes applies:
 6. **Code generation**: use `agents/04_code_generator.md`; prefer `scripts/course_adapted/` for Seurat V5 workflows and render placeholders through `scripts/render_template.py`.
 7. **Result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
 8. **Biological interpretation/report**: use agents 06-08, then run `scripts/write_analysis_report.py` to generate a durable report from the actual result tables.
+9. **Platform submission check**: before packaging or contest submission, read `references/platform-submission-checklist.md`, update `examples/validation_input_output_comparison.md` with at least 5 validation cases, run `scripts/validate_platform_skill.py`, and build the upload zip with `scripts/package_platform_skill.py`.
 
 ## Script Layout
 
@@ -71,6 +72,8 @@ python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md res
 python scripts/build_codebase_summary.py --course-root scripts/course_source --out CODEBASE_SUMMARY.md
 python scripts/write_analysis_report.py --result-dir analysis/run1 --metadata-json analysis/run1/report_metadata.json --out-md analysis/run1/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/run1 --out-md analysis/run1/full_workflow_validation.md
+python scripts/validate_platform_skill.py --skill-root .
+python scripts/package_platform_skill.py --skill-root . --out dist/scMechanism-Agent-skill.zip
 ```
 
 Use the PowerShell environment helpers before running Seurat V5 course-derived modules:
@@ -112,6 +115,7 @@ Read references selectively:
 | `references/environment/requirements.md` | R, Python, R package, and external software inventory. |
 | `references/environment/path-setup.md` | PATH, Rscript, Rtools, JAGS, gzip, and Conda setup rules. |
 | `references/tested-lessons.md` | Hard-won fixes from real Windows/Seurat V5 test runs. |
+| `references/platform-submission-checklist.md` | Medical AI Skill platform upload structure, validation evidence, and package exclusions. |
 
 ## Course Code Adaptation
 
@@ -148,6 +152,8 @@ A good answer or generated artifact should include:
 - A generated `manuscript_report.md` or equivalent after result review when a full workflow has completed.
 - A run log that records environment checks, rendered scripts, executed modules, warnings, and output locations.
 - A passing `validate_full_workflow.py` check before publishing or uploading a completed example.
+- A maintained `examples/validation_input_output_comparison.md` with at least 5 conclusion-clear validation cases before contest submission.
+- A passing `validate_platform_skill.py` check and an allowlisted upload zip from `package_platform_skill.py` before uploading to the Medical AI Skill platform.
 
 ## Safety
 

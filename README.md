@@ -63,6 +63,7 @@ python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5
 python scripts/validate_result_bundle.py --result-dir analysis/GSE --out-md result_quality_check.md
 python scripts/write_analysis_report.py --result-dir analysis/GSE --metadata-json analysis/GSE/report_metadata.json --out-md analysis/GSE/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/GSE --out-md analysis/GSE/full_workflow_validation.md
+python scripts/validate_platform_skill.py --skill-root .
 ```
 
 Environment preparation:
@@ -104,12 +105,21 @@ See `examples/` for cases covering:
 6. Uploaded marker tables.
 7. Uploaded CellChat results.
 
+For the Medical AI Skill platform submission requirement, use:
+
+- `examples/validation_input_output_comparison.md`: at least 5 fixed input-output comparison cases.
+- `references/platform-submission-checklist.md`: upload structure and exclusion rules from the platform manual.
+- `scripts/validate_platform_skill.py`: local structure and validation-evidence check.
+
 ## Packaging
 
-To package the project from its parent directory:
+Do not upload a raw repository zip to the platform. The repository contains GitHub documentation and optional full-run example outputs that are useful for development but too large/noisy for a platform Skill upload.
+
+Create the platform upload package with the allowlisted packaging script:
 
 ```powershell
-Compress-Archive -Path .\scMechanism-Agent -DestinationPath .\scMechanism-Agent.zip -Force
+python .\scripts\validate_platform_skill.py --skill-root .
+python .\scripts\package_platform_skill.py --skill-root . --out .\dist\scMechanism-Agent-skill.zip
 ```
 
-The resulting archive contains the skill folder, including `SKILL.md`, `agents/`, `references/`, `templates/`, `examples/`, `scripts/course_source/`, and `scripts/course_adapted/`.
+The resulting archive contains the uploadable skill folder with `SKILL.md`, `agents/`, `references/`, `examples/`, `scripts/`, and `templates/`. It excludes `.git/`, local data, generated caches, Seurat RDS objects, and full analysis output folders that should not be uploaded accidentally.

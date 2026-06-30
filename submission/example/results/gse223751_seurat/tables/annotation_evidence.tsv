@@ -1,0 +1,26 @@
+seurat_clusters	singleR_label	singleR_pruned_label	marker_support_label	final_example_label	note
+0	Erythrocytes	Erythrocytes	erythroid	Erythrocytes	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+1	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+10	B cells	B cells	cycling	B cells	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+11	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+12	Endothelial cells	Endothelial cells	endothelial	Endothelial cells	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+13	Fibroblasts	Fibroblasts	osteoblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+14	Cardiomyocytes	Cardiomyocytes	t_cell	Cardiomyocytes	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+15	Fibroblasts	Fibroblasts	chondrocyte	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+16	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+17	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+18	Fibroblasts	Fibroblasts	t_cell	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+19	Erythrocytes	Erythrocytes	erythroid	Erythrocytes	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+2	Erythrocytes	Erythrocytes	erythroid	Erythrocytes	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+20	Fibroblasts	Fibroblasts	osteoblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+21	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+22	Fibroblasts	Fibroblasts	myeloid	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+23	Cardiomyocytes	Cardiomyocytes	erythroid	Cardiomyocytes	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+24	Endothelial cells	Endothelial cells	endothelial	Endothelial cells	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+3	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+4	Fibroblasts	Fibroblasts	chondrocyte	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+5	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+6	B cells	B cells	b_cell	B cells	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+7	Fibroblasts	Fibroblasts	cycling	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+8	B cells	B cells	b_cell	B cells	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.
+9	Fibroblasts	Fibroblasts	tenocyte_fibroblast	Fibroblasts	SingleR is used as the automated annotation; marker scores are auxiliary evidence for review.

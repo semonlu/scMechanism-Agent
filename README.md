@@ -35,7 +35,8 @@ Clinical researchers often find public scRNA-seq datasets in GEO but cannot easi
 
 - Python 3.10 or newer for the helper scripts and Scanpy templates.
 - R 4.3 or newer for Seurat-oriented scripts.
-- Package needs depend on the selected script/template; see `references/seurat_pipeline_rules.md` and `references/scanpy_pipeline_rules.md`.
+- Package needs depend on the selected script/template; see `references/environment/requirements.md`, `references/environment/path-setup.md`, `references/seurat_pipeline_rules.md`, and `references/scanpy_pipeline_rules.md`.
+- Before running Seurat V5 course-derived modules, use `scripts/env_setup/check_environment.ps1`; when tools or packages are missing, use `scripts/env_setup/install_environment.ps1`.
 
 ## File Structure
 
@@ -48,6 +49,7 @@ references/
 templates/
 examples/
 scripts/
+  env_setup/
   course_source/
   course_adapted/
 ```
@@ -59,6 +61,15 @@ python scripts/diagnose_geo_inputs.py --file-list supplementary_files.txt --out-
 python scripts/build_analysis_plan.py --diagnosis-json diagnosis.json --question "lung cancer immune microenvironment" --organism human --comparison "tumor vs normal" --out-md analysis_plan.md
 python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5_core_pipeline.R --out run/01_seurat_v5_core_pipeline.R --define INPUT_PATH=/data/GSE --define OUTPUT_DIR=analysis/GSE
 python scripts/validate_result_bundle.py --result-dir analysis/GSE --out-md result_quality_check.md
+python scripts/write_analysis_report.py --result-dir analysis/GSE --metadata-json analysis/GSE/report_metadata.json --out-md analysis/GSE/manuscript_report.md
+python scripts/validate_full_workflow.py --project-root . --example-root analysis/GSE --out-md analysis/GSE/full_workflow_validation.md
+```
+
+Environment preparation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\check_environment.ps1 -CondaEnv seuratv5-course-py
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\install_environment.ps1 -InstallRPackages -InstallPythonEnv
 ```
 
 The Python scripts are helpers. The Seurat V5 course-derived R analysis code is in:

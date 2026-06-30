@@ -24,7 +24,7 @@ tab <- table(obj[[celltype_col]][, 1])
 keep_groups <- names(tab)[tab >= min_cells]
 obj <- subset(obj, cells = rownames(obj@meta.data)[obj[[celltype_col]][, 1] %in% keep_groups])
 
-data.input <- GetAssayData(obj, assay = "RNA", slot = "data")
+data.input <- GetAssayData(obj, assay = "RNA", layer = "data")
 meta <- data.frame(cell_type = obj[[celltype_col]][, 1], row.names = colnames(obj))
 
 cellchat <- createCellChat(object = data.input, meta = meta, group.by = "cell_type")

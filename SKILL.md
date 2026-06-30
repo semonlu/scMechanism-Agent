@@ -1,6 +1,6 @@
 ---
 name: singlecell-research
-description: "Use when Codex needs to assist GEO/SRA/public single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, and Seurat V5 course-derived workflows."
+description: "Use when Codex needs to assist GEO/SRA/public single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, prepare/check Windows R/Python Seurat V5 environments before running code, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript/report text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, Seurat V5 course-derived workflows, and report/log generation after a full run."
 ---
 
 # scMechanism Agent: Public Single-cell Research Skill
@@ -23,10 +23,10 @@ This skill is a decision and code-generation controller. It does not promise tha
 1. Parse the clinical/scientific question.
 2. Diagnose GEO/SRA/local file formats and data readiness.
 3. Generate an analysis plan with risks and required metadata.
-4. Select or render local runnable Seurat/Scanpy/CellChat/Monocle3 code.
-5. User runs the code locally, in RStudio, Python, Colab, or an institutional server.
-6. User returns result files.
-7. Skill checks result quality and writes cautious interpretation, Methods, Results, legends, limitations, and validation suggestions.
+4. Check or install the required R/Python environment before running Seurat V5 course-derived code.
+5. Select or render local runnable Seurat/Scanpy/CellChat/Monocle3 code.
+6. User or Codex runs the code locally, in RStudio, Python, Colab, or an institutional server when tools are available.
+7. Skill checks result quality, removes known-bad rerun artifacts, writes logs, and writes cautious interpretation, Methods, Results, legends, limitations, and validation suggestions.
 
 Do not claim:
 
@@ -44,9 +44,10 @@ Start every task by determining which of these modes applies:
 2. **Publication or methods text**: extract accessions, organism, tissue, sample groups, platform, matrix/object availability, and missing metadata before writing code.
 3. **File list/accession diagnosis**: use `agents/02_geo_dataset_and_format_diagnosis.md` and optionally run `scripts/diagnose_geo_inputs.py`.
 4. **Analysis planning**: use `agents/03_analysis_plan_generator.md` and optionally run `scripts/build_analysis_plan.py`.
-5. **Code generation**: use `agents/04_code_generator.md`; prefer `scripts/course_adapted/` for Seurat V5 workflows and render placeholders through `scripts/render_template.py`.
-6. **Result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
-7. **Biological interpretation/report**: use agents 06-08 and the report templates.
+5. **Environment preparation**: before Seurat V5 course-derived execution, read `references/environment/requirements.md`, `references/environment/path-setup.md`, and run `scripts/env_setup/check_environment.ps1`; run `scripts/env_setup/install_environment.ps1` when tools or packages are missing.
+6. **Code generation**: use `agents/04_code_generator.md`; prefer `scripts/course_adapted/` for Seurat V5 workflows and render placeholders through `scripts/render_template.py`.
+7. **Result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
+8. **Biological interpretation/report**: use agents 06-08, then run `scripts/write_analysis_report.py` to generate a durable report from the actual result tables.
 
 ## Script Layout
 
@@ -56,6 +57,7 @@ The skill script folder has three roles:
 scripts/
   course_source/        English-named, lightly adapted reference scripts from the Seurat V5 course
   course_adapted/       runnable R scripts adapted from the course modules
+  env_setup/            Windows R/Python/Rtools/JAGS environment install and verification scripts
   *.py                  helper controllers for diagnosis, planning, rendering, validation, and summaries
 ```
 
@@ -67,6 +69,15 @@ python scripts/build_analysis_plan.py --diagnosis-json diagnosis.json --question
 python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5_core_pipeline.R --out run/01_seurat_v5_core_pipeline.R --define INPUT_PATH=/path/to/data --define OUTPUT_DIR=analysis/run1
 python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md result_quality_check.md
 python scripts/build_codebase_summary.py --course-root scripts/course_source --out CODEBASE_SUMMARY.md
+python scripts/write_analysis_report.py --result-dir analysis/run1 --metadata-json analysis/run1/report_metadata.json --out-md analysis/run1/manuscript_report.md
+python scripts/validate_full_workflow.py --project-root . --example-root analysis/run1 --out-md analysis/run1/full_workflow_validation.md
+```
+
+Use the PowerShell environment helpers before running Seurat V5 course-derived modules:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\env_setup\check_environment.ps1 -CondaEnv seuratv5-course-py
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\env_setup\install_environment.ps1 -InstallRPackages -InstallPythonEnv
 ```
 
 Use these course-adapted R scripts for Seurat V5 analysis:
@@ -98,6 +109,9 @@ Read references selectively:
 | `references/output_file_checklist.md` | Expected output files and quality checks. |
 | `references/course-code-index.md` | Exact mapping from Seurat V5 course scripts to skill scripts. |
 | `references/course-adaptation.md` | How to adapt the Chinese Seurat V5 course code safely. |
+| `references/environment/requirements.md` | R, Python, R package, and external software inventory. |
+| `references/environment/path-setup.md` | PATH, Rscript, Rtools, JAGS, gzip, and Conda setup rules. |
+| `references/tested-lessons.md` | Hard-won fixes from real Windows/Seurat V5 test runs. |
 
 ## Course Code Adaptation
 
@@ -131,6 +145,9 @@ A good answer or generated artifact should include:
 - Expected output files.
 - Quality-control and interpretation limits.
 - Clear separation among observation, statistical inference, and mechanism hypothesis.
+- A generated `manuscript_report.md` or equivalent after result review when a full workflow has completed.
+- A run log that records environment checks, rendered scripts, executed modules, warnings, and output locations.
+- A passing `validate_full_workflow.py` check before publishing or uploading a completed example.
 
 ## Safety
 

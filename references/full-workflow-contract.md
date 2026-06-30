@@ -9,12 +9,14 @@ This contract defines what the first version of the skill can produce. It is not
 | Question parsing | Structured clinical research question | `agents/01_clinical_question_parser.md` |
 | Format diagnosis | Identify GEO/SRA/local formats | `scripts/diagnose_geo_inputs.py` |
 | Analysis plan | Produce staged plan with risks | `scripts/build_analysis_plan.py` |
+| Environment setup | Check/install R, Rtools, JAGS, R packages, and Python env before Seurat V5 execution | `scripts/env_setup/*.ps1`, `scripts/env_setup/install_r_packages.R` |
 | Seurat code | Render course-adapted local R script | `scripts/course_adapted/01_seurat_v5_core_pipeline.R` |
 | Scanpy code | Render local Python template | `templates/scanpy_basic_pipeline_template.py` |
 | CellChat | Render course-adapted CellChat script | `scripts/course_adapted/03_cellchat_from_seurat.R` |
 | Monocle3 | Render course-adapted trajectory script | `scripts/course_adapted/04_monocle3_from_seurat.R` |
 | Result QC | Review uploaded result folder | `scripts/validate_result_bundle.py` |
-| Interpretation/report | Draft cautious text | `templates/*.md` and agents 06-08 |
+| Interpretation/report | Generate table-backed manuscript-style report | `scripts/write_analysis_report.py`, `templates/*.md`, agents 06-08 |
+| Full-run validation | Block known regressions before publishing | `scripts/validate_full_workflow.py` |
 
 ## Optional/Future Modules
 
@@ -33,3 +35,7 @@ This contract defines what the first version of the skill can produce. It is not
 - Every code script/template exposes input path, output directory, organism, and key parameters.
 - Result interpretation does not invent p values, genes, pathways, or clinical claims.
 - Reports separate observation, statistical inference, and mechanism hypothesis.
+- Full workflow runs produce both result-quality checks and manuscript/report text.
+- Environment checks are saved before or alongside analysis logs.
+- Pseudotime examples intended to show cell states must contain at least two states and must not reuse single-label-only input unless explicitly marked as a single-state audit.
+- Publication-facing trajectory plots must suppress Monocle principal-point labels that obscure cells.

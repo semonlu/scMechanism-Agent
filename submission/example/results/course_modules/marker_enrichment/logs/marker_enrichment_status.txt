@@ -1,0 +1,5 @@
+Seurat object: D:/单细胞测试/scMechanism-Agent/submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds
+Identity column: singleR_label
+Organism: mouse
+Top markers per cluster: 20
+Enrichment: completed for top marker set.

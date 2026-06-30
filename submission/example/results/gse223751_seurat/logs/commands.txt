@@ -1,0 +1,11 @@
+E:\R-4.4.2\bin\x64\Rterm.exe
+--no-echo
+--no-restore
+--file=D:\单细胞测试\scMechanism-Agent\submission\example\scripts\03_run_gse223751_seurat.R
+--args
+--input-dir
+D:\单细胞测试\scMechanism-Agent\submission\example\data\processed\10x_by_sample
+--metadata
+D:\单细胞测试\scMechanism-Agent\submission\example\metadata\gse223751_sample_metadata.csv
+--output-dir
+D:\单细胞测试\scMechanism-Agent\submission\example\results\gse223751_seurat

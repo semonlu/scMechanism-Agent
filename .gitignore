@@ -16,6 +16,9 @@ renv/library/
 
 # Generated analysis outputs and large objects
 analysis/
+submission/example/data/
+seuratv5_environment_check/
+seuratv5_r_package_check.tsv
 *.rds
 *.rda
 *.h5ad

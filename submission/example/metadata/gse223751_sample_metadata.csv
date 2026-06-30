@@ -1,0 +1,8 @@
+sample_id,gsm,stage,replicate,condition,tissue,organism,platform
+e15,GSM6994831,E15,1,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p1,GSM6994832,P1,1,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p14,GSM6994834,P14,1,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p28_1,GSM6994835,P28,1,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p28_2,GSM6994836,P28,2,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p28_3,GSM6994837,P28,3,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3
+p7,GSM6994833,P7,1,developmental_timecourse,rotator_cuff_enthesis,Mus musculus,10x Genomics Chromium v3

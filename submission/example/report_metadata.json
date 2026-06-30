@@ -1,0 +1,8 @@
+{
+  "dataset": "Single-cell RNA sequencing reveals cellular and molecular heterogeneity in fibrocartilaginous enthesis formation",
+  "accession": "GSE223751",
+  "organism": "Mus musculus",
+  "tissue": "rotator cuff fibrocartilaginous enthesis",
+  "scope_note": "Shoulder-region enthesis developmental single-cell example; not a frozen-shoulder or shoulder periarthritis case-control cohort.",
+  "pipeline": "Seurat V5, SingleR, marker-support scoring, cluster marker detection, GO/KEGG enrichment, CellChat, and Monocle3"
+}

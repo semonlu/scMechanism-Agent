@@ -1,0 +1,165 @@
+# CODEBASE_SUMMARY
+
+Course-derived script root: `scripts/course_source`
+
+## Main Languages
+- R
+- Python helper scripts
+- Markdown skill instructions
+
+## Entry Scripts
+- `01_install_core_r_packages.R`: dependency inventory; SCINA, SingleR, clusterProfiler, infercnv, monocle; original path listed in `scripts/course_source/source_manifest.csv`
+- `02_install_github_r_packages.R`: dependency inventory; CIBERSORT, MuSiC, WGCNA, copykat, hdWGCNA, monocle, monocle3, scPred; original path listed in `scripts/course_source/source_manifest.csv`
+- `03_read_single_matrix.R`: input import reference; .qs, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `04_read_multiple_matrices.R`: input import reference; .qs, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `05_read_10x_standard.R`: 10x import reference; .qs, Read10X, matrix.mtx, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `06_read_10x_nonstandard.R`: 10x import reference; .qs, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `07_read_multiple_10x_samples.R`: 10x import reference; .qs, Read10X, matrix.mtx, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `08_read_10x_h5.R`: h5 import reference; .qs, Read10X, Read10X_h5, monocle, percent.mt; original path listed in `scripts/course_source/source_manifest.csv`
+- `09_merge_mixed_inputs.R`: merge reference; .qs, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `10_quality_control.R`: QC reference; .qs, FeatureScatter, VlnPlot, monocle, percent.mt, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `11_normalization_decontx_harmony.R`: normalization reference; .qs, NormalizeData, RunHarmony, RunTSNE, RunUMAP, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `12_doublet_finder.R`: doublet reference; .qs, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `13_scdblfinder.R`: doublet reference; .qs, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `14_post_doublet_normalization.R`: normalization reference; .qs, NormalizeData, RunHarmony, RunTSNE, RunUMAP, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `15_clustering_resolution.R`: clustering reference; .qs, FindClusters, FindNeighbors, RunTSNE, RunUMAP, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `16_manual_cell_annotation.R`: annotation reference; .qs, FindClusters, FindNeighbors, NormalizeData, RunTSNE, RunUMAP, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `17_singler_annotation.R`: annotation reference; .qs, SingleR, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `18_scina_annotation.R`: annotation reference; .qs, SCINA, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `19_llm_annotation_kimi.R`: LLM annotation reference; .qs, FindAllMarkers, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `20_llm_annotation_deepseek.R`: LLM annotation reference; .qs, FindAllMarkers, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `21_transferdata_annotation.R`: annotation reference; .qs, TransferData, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `22_scpred_annotation.R`: annotation reference; .qs, monocle, qread, scPred; original path listed in `scripts/course_source/source_manifest.csv`
+- `23_marker_detection_methods.R`: marker reference; .qs, FindAllMarkers, cosg, monocle, qread, wilcoxauc; original path listed in `scripts/course_source/source_manifest.csv`
+- `24_go_kegg_enrichment.R`: enrichment reference; .qs, FindAllMarkers, clusterProfiler, enrichGO, enrichKEGG, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `25_monocle2_pseudotime.R`: trajectory reference; .qs, FindAllMarkers, FindMarkers, monocle, qread, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `26_monocle3_pseudotime.R`: trajectory reference; .qs, NormalizeData, learn_graph, monocle, monocle3, order_cells, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `27_cellchat_analysis.R`: cell communication reference; .qs, computeCommunProb, createCellChat, monocle, qread, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `28_copykat_cnv.R`: CNV reference; .qs, copykat, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `29_infercnv_basic.R`: CNV reference; .qs, infercnv, qread, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `30_infercnv_with_normal_reference.R`: CNV reference; .qs, NormalizeData, RunTSNE, RunUMAP, infercnv, qread, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `31_infercnv_score.R`: CNV reference; .qs, infercnv, qread, read.table, readRDS, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `32_hdwgcna_coexpression.R`: coexpression reference; .qs, VlnPlot, WGCNA, hdWGCNA, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `33_cibersort_xxdimmune_helper.R`: deconvolution helper reference; CIBERSORT, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `34_cibersort_deconvolution.R`: deconvolution reference; .qs, CIBERSORT, infercnv, qread, read.table, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `35_music_deconvolution.R`: deconvolution reference; .qs, MuSiC, infercnv, music_prop, qread; original path listed in `scripts/course_source/source_manifest.csv`
+
+## Dependencies Detected
+- AnnoProbe
+- BiocParallel
+- CCA
+- COSG
+- CellChat
+- ComplexHeatmap
+- DOSE
+- DoubletFinder
+- GSEABase
+- GSVA
+- Matrix
+- MuSiC
+- NMF
+- R.utils
+- SCINA
+- SCpubr
+- Seurat
+- SeuratObject
+- SingleCellExperiment
+- SingleR
+- UCell
+- WGCNA
+- ape
+- assertthat
+- car
+- celldex
+- circlize
+- clusterProfiler
+- clustree
+- copykat
+- cowplot
+- data.table
+- decontX
+- doParallel
+- dplyr
+- e1071
+- fastSave
+- foreach
+- future
+- future.apply
+- ggExtra
+- ggalluvial
+- ggforce
+- ggplot2
+- ggpubr
+- ggsci
+- glmGamPoi
+- grid
+- gridExtra
+- harmony
+- hdWGCNA
+- hdf5r
+- igraph
+- infercnv
+- irGSEA
+- limma
+- miscTools
+- monocle
+- monocle3
+- openai
+- org.Hs.eg.db
+- parallel
+- patchwork
+- phylogram
+- plyr
+- preprocessCore
+- presto
+- qs
+- randomcoloR
+- remotes
+- reshape2
+- ridge
+- scCustomize
+- scDblFinder
+- scPred
+- scales
+- scater
+- scattermore
+- starTracer
+- stringr
+- tcltk
+- tidyverse
+- tricycle
+- vioplot
+- xxdAIcelltype
+
+## Module Coverage
+- GEO download: `missing`
+- 10x MEX import: `present`
+- 10x H5 import: `present`
+- h5ad import: `missing`
+- Seurat object import: `present`
+- CSV/TSV import: `present`
+- QC: `present`
+- normalization: `present`
+- batch correction: `present`
+- clustering: `present`
+- UMAP/tSNE: `present`
+- marker detection: `present`
+- cell annotation: `present`
+- differential expression: `present`
+- enrichment: `present`
+- cell proportion: `present`
+- CellChat: `present`
+- Monocle: `present`
+- CNV: `present`
+- coexpression: `present`
+- deconvolution: `present`
+- scVelo/CellRank: `missing`
+- virtual perturbation: `missing`
+- report generation: `missing`
+
+## Notes
+- Course source scripts are renamed to English and flattened under `scripts/course_source/`.
+- The manifest `scripts/course_source/source_manifest.csv` maps English filenames to original course paths.
+- Reference scripts still require review for project-specific object names, thresholds, metadata columns, and filenames.
+- Runnable project workflows should use `scripts/course_adapted/`.
+- Missing modules should be documented as future extensions, not implemented claims.

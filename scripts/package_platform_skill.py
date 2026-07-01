@@ -11,11 +11,14 @@ from pathlib import Path
 
 ALLOWLIST = [
     "SKILL.md",
+    "README.md",
+    "SECURITY_AND_PRIVACY.md",
     "agents",
     "references",
     "examples",
     "scripts",
     "templates",
+    "submission/platform",
 ]
 
 EXCLUDE_DIRS = {
@@ -41,18 +44,11 @@ EXCLUDE_SUFFIXES = {
     ".log",
 }
 
-EXCLUDE_FILENAMES = {
-    "README.md",
-}
-
-
 def should_include(path: Path, root: Path) -> bool:
     rel = path.relative_to(root)
     if any(part in EXCLUDE_DIRS for part in rel.parts):
         return False
     if path.is_file() and path.suffix.lower() in EXCLUDE_SUFFIXES:
-        return False
-    if path.is_file() and path.name in EXCLUDE_FILENAMES:
         return False
     if path.name.startswith(".") and path.name not in {".gitkeep"}:
         return False

@@ -1,132 +1,216 @@
 # Validation Input-Output Comparison Report
 
-This report is the fixed "test stone" set for the Medical AI Skill platform. Re-run these cases after changing the skill. The platform manual asks for at least 5 familiar, conclusion-clear validation cases before submission.
+This is the fixed 5-case validation set for the Medical AI Skill platform. After uploading and enabling the skill on the platform, run these prompts again and paste the platform output summary or screenshot links into the "Platform observed output" fields.
 
 ## Summary
 
-| Case | Scenario | Expected conclusion | Observed status |
-|---|---|---|---|
-| 1 | GEO full workflow, GSE223751 | diagnose input, run Seurat V5 workflow, SingleR annotation, enrichment, CellChat, Monocle3, report | Pass |
-| 2 | GEO supplementary file diagnosis | identify 10x-style supplementary files and missing metadata before code | Pass |
-| 3 | Local 10x MEX matrix | request explicit input/output paths, check environment, render Seurat pipeline | Pass |
-| 4 | Seurat RDS pseudotime review | reject one-label trajectory and require multi-state Monocle3 input | Pass |
-| 5 | Marker table biological report | separate observation, inference, hypothesis, and validation limits | Pass |
+| Case | Input type | Expected output | Platform observed output | Status | Revision record |
+|---|---|---|---|---|---|
+| Case 1 | Clinical research question | Identify disease, tissue, key cells, and analysis route | To be filled after platform run | Pending platform run | None |
+| Case 2 | 10x MEX supplementary files | Recognize 10x MEX and recommend Read10X / scanpy.read_10x_mtx | To be filled after platform run | Pending platform run | None |
+| Case 3 | h5ad / RDS processed objects | Distinguish Scanpy and Seurat routes | To be filled after platform run | Pending platform run | None |
+| Case 4 | FASTQ / SRA raw data | Refuse direct Seurat analysis and route through expression matrix generation | To be filled after platform run | Pending platform run | None |
+| Case 5 | Uploaded result tables | Quality-check results and draft cautious Results/mechanism text | To be filled after platform run | Pending platform run | None |
 
-## Case 1: GEO Full Workflow
-
-Input:
-
-```text
-Use $singlecell-research to create submission/example, search GEO for a shoulder single-cell dataset, run the full workflow with SingleR annotation, visualization, enrichment, CellChat, Monocle3 pseudotime, and write a report.
-```
-
-Expected behavior:
-
-- diagnose the public GEO input before analysis.
-- check/install R and Python dependencies before heavy execution.
-- use course-derived R scripts rather than replacing them with unrelated Python-only code.
-- use SingleR for automatic annotation.
-- produce QC, UMAP, marker, enrichment, CellChat, and pseudotime figures/tables.
-- write a manuscript-style report and run log from actual output tables.
-
-Observed output:
-
-- `submission/example/results/gse223751_seurat/` contains Seurat QC, UMAP, SingleR annotation, and marker outputs.
-- `submission/example/results/course_modules/` contains marker enrichment, CellChat, and Monocle3 modules.
-- `submission/example/manuscript_report.md` and `submission/example/full_workflow_log.md` were generated.
-- `submission/example/full_workflow_validation.md` reports `PASSED`.
-
-Judgment: Pass.
-
-## Case 2: GEO Supplementary File Diagnosis
+## Case 1: Clinical Question Input
 
 Input:
 
 ```text
-Use $singlecell-research to inspect a GEO supplementary file list that includes 10x barcodes.tsv.gz, features.tsv.gz, and matrix.mtx.gz files, then tell me whether it is ready for Seurat V5 analysis.
+我想研究膝骨关节炎滑膜组织中巨噬细胞和成纤维细胞的异常变化，想用 GEO 单细胞数据做机制分析。
 ```
 
-Expected behavior:
+Expected skill behavior:
 
-- use `agents/02_geo_dataset_and_format_diagnosis.md`.
-- classify the file list as 10x MEX-ready when matrix, feature, and barcode files are present.
-- identify sample metadata and condition labels as required analysis inputs.
-- avoid claiming biological conclusions before analysis.
+- Split the question into disease, tissue, organism if available, target cell types, comparison design, and missing metadata.
+- Recommend a reproducible analysis route: dataset search/diagnosis, QC, clustering, cell annotation, cell proportion analysis, differential expression, enrichment, cell communication, and pseudotime where justified.
+- Avoid claiming that a GEO reanalysis is clinical diagnostic evidence.
 
-Observed output:
+Expected output summary:
 
-- the diagnosis workflow maps the file set to `10x_mex`.
-- the generated diagnosis asks for sample/group metadata and an output directory.
-- the result points to `scripts/course_adapted/01_seurat_v5_core_pipeline.R` as the correct next script.
+```text
+Disease: knee osteoarthritis
+Tissue: synovium
+Key cells: macrophages, fibroblasts, T cells, endothelial cells
+Recommended modules: cell annotation, cell proportion, DEG, enrichment, cell communication, pseudotime
+Missing information: GEO accession or candidate dataset, organism, disease/control design, sample metadata
+```
 
-Judgment: Pass.
+Expected triggered files/rules:
 
-## Case 3: Local 10x MEX Matrix
+- `agents/01_clinical_question_parser.md`
+- `agents/03_analysis_plan_generator.md`
+- `references/clinical_translation_rules.md`
+- `references/seurat_pipeline_rules.md`
+
+Platform observed output:
+
+```text
+To be filled after platform run.
+```
+
+Judgment: Pending platform run.
+
+## Case 2: 10x MEX File Format Diagnosis
 
 Input:
 
 ```text
-Use $singlecell-research to analyze D:\example\matrix as a local 10x matrix. Save results to D:\example\out and include QC, clustering, SingleR annotation, markers, and UMAP plots.
+GEO补充文件包括：
+GSM1_matrix.mtx.gz
+GSM1_barcodes.tsv.gz
+GSM1_features.tsv.gz
+GSM2_matrix.mtx.gz
+GSM2_barcodes.tsv.gz
+GSM2_features.tsv.gz
+metadata.csv
 ```
 
-Expected behavior:
+Expected skill behavior:
 
-- request or infer explicit `input_path`, `metadata_path` when available, and `output_dir`.
-- run `scripts/env_setup/check_environment.ps1` before rendering analysis code.
-- render the Seurat V5 core pipeline with parameters instead of using `setwd(choose.dir())`.
-- warn that local private data should not be uploaded to external services.
+- Recognize 10x MEX-style supplementary files.
+- State that FASTQ reconstruction is not required for standard downstream analysis.
+- Recommend Seurat `Read10X()` and Scanpy `read_10x_mtx()` routes.
+- Ask for sample-level metadata and disease/control grouping before differential analysis.
 
-Observed output:
+Expected output summary:
 
-- the skill instructions route local matrices through format diagnosis, environment preparation, and code rendering.
-- `references/environment/requirements.md` and `references/environment/path-setup.md` define R >= 4.3 and Python >= 3.10 checks.
-- `scripts/course_adapted/01_seurat_v5_core_pipeline.R` is parameterized for input and output paths.
+```text
+Format: 10x MEX
+Ready for downstream analysis: yes, if matrix/features/barcodes are paired per sample
+Recommended readers: Seurat::Read10X() / scanpy.read_10x_mtx()
+FASTQ reconstruction: not required
+Next modules: QC, clustering, annotation, marker genes, DEG, enrichment
+```
 
-Judgment: Pass.
+Expected triggered files/rules:
 
-## Case 4: Seurat RDS Pseudotime Review
+- `agents/02_geo_dataset_and_format_diagnosis.md`
+- `references/supported_geo_formats.md`
+- `references/seurat_pipeline_rules.md`
+- `references/scanpy_pipeline_rules.md`
+
+Platform observed output:
+
+```text
+To be filled after platform run.
+```
+
+Judgment: Pending platform run.
+
+## Case 3: h5ad / RDS Object Diagnosis
 
 Input:
 
 ```text
-Use $singlecell-research to run Monocle3 pseudotime from a Seurat RDS. The current trajectory figure only shows one cell type; fix the workflow so it does not repeat that error.
+这个GEO数据提供了 processed_data.h5ad 和 seurat_object.rds，可以怎么分析？
 ```
 
-Expected behavior:
+Expected skill behavior:
 
-- read `references/pseudotime_rules.md` and `references/tested-lessons.md`.
-- reject pseudotime input if the chosen cell type column has fewer than two states.
-- prefer biologically ordered multi-state subsets for Monocle3.
-- suppress distracting Monocle3 graph point labels in publication-facing figures.
-- write `trajectory_input_state_counts.csv`.
+- Distinguish AnnData/h5ad and Seurat RDS objects.
+- Recommend Scanpy for h5ad and R/Seurat for RDS.
+- Check whether objects contain counts/raw counts, metadata, embeddings, and cell type annotations.
+- Explain that existing processed objects may be suitable for interpretation but may limit raw-count differential expression.
 
-Observed output:
+Expected output summary:
 
-- `scripts/course_adapted/04_monocle3_from_seurat.R` stops when `length(celltype_counts) < 2`.
-- the tested example uses `marker_support_label` with multiple states.
-- output includes `trajectory_celltypes.pdf`, `trajectory_celltypes_with_graph.pdf`, and `trajectory_input_state_counts.csv`.
+```text
+h5ad: prefer Scanpy/anndata reading and inspect obs, var, X/raw/layers
+RDS: prefer R/Seurat reading and inspect meta.data, assays/layers, reductions, annotations
+Before analysis: confirm raw counts, sample metadata, batch/sample columns, and cell type labels
+```
 
-Judgment: Pass.
+Expected triggered files/rules:
 
-## Case 5: Marker Table Biological Report
+- `agents/02_geo_dataset_and_format_diagnosis.md`
+- `references/supported_geo_formats.md`
+- `references/scanpy_pipeline_rules.md`
+- `references/seurat_pipeline_rules.md`
+
+Platform observed output:
+
+```text
+To be filled after platform run.
+```
+
+Judgment: Pending platform run.
+
+## Case 4: FASTQ / SRA Raw Data Boundary
 
 Input:
 
 ```text
-Use $singlecell-research to interpret uploaded marker, enrichment, CellChat, and pseudotime tables and draft a cautious mechanism report.
+这个数据只有 SRR 文件，可以直接做 Seurat 分析吗？
 ```
 
-Expected behavior:
+Expected skill behavior:
 
-- avoid inventing unsupported values.
-- cite actual table-derived findings.
-- separate observed patterns, statistical inference, mechanism hypotheses, and validation suggestions.
-- include Methods, Results, Figure Legends, Supplementary Tables, Limitations, and validation recommendations.
+- Clearly state that SRR/FASTQ cannot go directly into Seurat/Scanpy downstream analysis.
+- Route the user through SRA Toolkit download and expression quantification.
+- Ask for organism, reference genome, chemistry/platform, sample metadata, and compute plan.
+- Avoid promising fully automatic raw-read processing without those choices.
 
-Observed output:
+Expected output summary:
 
-- `scripts/write_analysis_report.py` reads tables from the result directory and optional metadata JSON.
-- `submission/example/manuscript_report.md` contains Methods, Results, Cell Annotation, Marker Enrichment, CellChat, Pseudotime, Mechanism Hypothesis, Figure Legends, Supplementary Tables, Limitations, and Validation Suggestions.
+```text
+Cannot directly run downstream Seurat/Scanpy analysis from SRR alone.
+First generate an expression matrix using SRA Toolkit plus Cell Ranger, kallisto-bustools, or alevin-fry.
+Then proceed to QC, clustering, annotation, marker, DEG, and downstream interpretation.
+```
 
-Judgment: Pass.
+Expected triggered files/rules:
+
+- `agents/02_geo_dataset_and_format_diagnosis.md`
+- `agents/08_safety_and_limitation_checker.md`
+- `references/supported_geo_formats.md`
+- `references/full-workflow-contract.md`
+
+Platform observed output:
+
+```text
+To be filled after platform run.
+```
+
+Judgment: Pending platform run.
+
+## Case 5: Uploaded Result Interpretation
+
+Input:
+
+```text
+这是我本地跑出来的 marker_gene.csv、DEG.csv、enrichment.csv 和 cellchat_results.csv，请帮我判断结果是否合理，并生成论文 Results 草稿。
+```
+
+Expected skill behavior:
+
+- Switch from code generation to result quality review and biological interpretation.
+- Check marker support, differential cell groups, key genes, enrichment terms, and CellChat changes.
+- Separate observations, statistical inference, mechanism hypotheses, limitations, and validation suggestions.
+- Draft a cautious manuscript Results section without inventing table values.
+
+Expected output summary:
+
+```text
+Review: cell annotation support, marker consistency, DEG direction, enrichment plausibility, communication changes
+Output: result quality notes, mechanism hypothesis, limitations, validation suggestions, and Results draft
+Safety: computational inference only; requires independent validation
+```
+
+Expected triggered files/rules:
+
+- `agents/05_result_quality_checker.md`
+- `agents/06_biological_interpreter.md`
+- `agents/07_report_writer.md`
+- `agents/08_safety_and_limitation_checker.md`
+- `references/output_file_checklist.md`
+- `references/clinical_translation_rules.md`
+
+Platform observed output:
+
+```text
+To be filled after platform run.
+```
+
+Judgment: Pending platform run.
 

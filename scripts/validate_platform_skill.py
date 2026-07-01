@@ -11,10 +11,20 @@ from pathlib import Path
 
 REQUIRED_PATHS = [
     "SKILL.md",
+    "README.md",
+    "SECURITY_AND_PRIVACY.md",
     "agents",
     "references",
     "examples",
     "examples/validation_input_output_comparison.md",
+    "submission/platform",
+    "submission/platform/skill_brief.md",
+    "submission/platform/clinical_pain_point.md",
+    "submission/platform/implementation_plan.md",
+    "submission/platform/business_value.md",
+    "submission/platform/demo_script.md",
+    "submission/platform/validation_report.md",
+    "submission/platform/github_link.md",
 ]
 
 FORBIDDEN_TOP_LEVEL = {

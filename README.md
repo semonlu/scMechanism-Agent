@@ -109,6 +109,8 @@ For the Medical AI Skill platform submission requirement, use:
 
 - `examples/validation_input_output_comparison.md`: at least 5 fixed input-output comparison cases.
 - `references/platform-submission-checklist.md`: upload structure and exclusion rules from the platform manual.
+- `submission/platform/`: concise reviewer-facing materials.
+- `SECURITY_AND_PRIVACY.md`: safety, privacy, and data handling boundaries.
 - `scripts/validate_platform_skill.py`: local structure and validation-evidence check.
 
 ## Packaging
@@ -122,4 +124,4 @@ python .\scripts\validate_platform_skill.py --skill-root .
 python .\scripts\package_platform_skill.py --skill-root . --out .\dist\scMechanism-Agent-skill.zip
 ```
 
-The resulting archive contains the uploadable skill folder with `SKILL.md`, `agents/`, `references/`, `examples/`, `scripts/`, and `templates/`. It excludes `.git/`, local data, generated caches, Seurat RDS objects, and full analysis output folders that should not be uploaded accidentally.
+The resulting archive contains the uploadable skill folder with `SKILL.md`, `README.md`, `agents/`, `references/`, `examples/`, `scripts/`, `templates/`, `submission/platform/`, and `SECURITY_AND_PRIVACY.md`. It excludes `.git/`, local data, generated caches, Seurat RDS objects, and full analysis output folders that should not be uploaded accidentally.

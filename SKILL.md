@@ -117,6 +117,20 @@ Read references selectively:
 | `references/tested-lessons.md` | Hard-won fixes from real Windows/Seurat V5 test runs. |
 | `references/platform-submission-checklist.md` | Medical AI Skill platform upload structure, validation evidence, and package exclusions. |
 
+## Platform Contest Materials
+
+For Medical AI Skill platform submission, include reviewer-facing materials under `submission/platform/`:
+
+- `skill_brief.md`
+- `clinical_pain_point.md`
+- `implementation_plan.md`
+- `business_value.md`
+- `demo_script.md`
+- `validation_report.md`
+- `github_link.md`
+
+Keep full local workflow evidence under `submission/example/` for GitHub/local review. Do not include heavy local analysis outputs in the platform upload zip unless the platform explicitly requests them.
+
 ## Course Code Adaptation
 
 The local Seurat V5 course archive is reorganized inside the skill at `scripts/course_source/` as English-named source evidence. Runnable versions live in `scripts/course_adapted/`. The course contributes logic for:

@@ -1,0 +1,1 @@
+python scripts/diagnose_geo_inputs.py --out-json examples/validation_runs/case_02_10x_mex/diagnosis.json --out-md examples/validation_runs/case_02_10x_mex/diagnosis.md --items GSM1_matrix.mtx.gz GSM1_barcodes.tsv.gz GSM1_features.tsv.gz GSM2_matrix.mtx.gz GSM2_barcodes.tsv.gz GSM2_features.tsv.gz metadata.csv

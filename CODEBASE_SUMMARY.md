@@ -26,8 +26,8 @@ Course-derived script root: `scripts/course_source`
 - `16_manual_cell_annotation.R`: annotation reference; .qs, FindClusters, FindNeighbors, NormalizeData, RunTSNE, RunUMAP, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
 - `17_singler_annotation.R`: annotation reference; .qs, SingleR, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
 - `18_scina_annotation.R`: annotation reference; .qs, SCINA, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
-- `19_llm_annotation_kimi.R`: LLM annotation reference; .qs, FindAllMarkers, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
-- `20_llm_annotation_deepseek.R`: LLM annotation reference; .qs, FindAllMarkers, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `19_llm_annotation_kimi.R`: LLM annotation reference; .qs, FindAllMarkers, SingleR, qread; original path listed in `scripts/course_source/source_manifest.csv`
+- `20_llm_annotation_deepseek.R`: LLM annotation reference; .qs, FindAllMarkers, SingleR, qread; original path listed in `scripts/course_source/source_manifest.csv`
 - `21_transferdata_annotation.R`: annotation reference; .qs, TransferData, monocle, qread; original path listed in `scripts/course_source/source_manifest.csv`
 - `22_scpred_annotation.R`: annotation reference; .qs, monocle, qread, scPred; original path listed in `scripts/course_source/source_manifest.csv`
 - `23_marker_detection_methods.R`: marker reference; .qs, FindAllMarkers, cosg, monocle, qread, wilcoxauc; original path listed in `scripts/course_source/source_manifest.csv`
@@ -40,7 +40,7 @@ Course-derived script root: `scripts/course_source`
 - `30_infercnv_with_normal_reference.R`: CNV reference; .qs, NormalizeData, RunTSNE, RunUMAP, infercnv, qread, table(; original path listed in `scripts/course_source/source_manifest.csv`
 - `31_infercnv_score.R`: CNV reference; .qs, infercnv, qread, read.table, readRDS, table(; original path listed in `scripts/course_source/source_manifest.csv`
 - `32_hdwgcna_coexpression.R`: coexpression reference; .qs, VlnPlot, WGCNA, hdWGCNA, qread; original path listed in `scripts/course_source/source_manifest.csv`
-- `33_cibersort_xxdimmune_helper.R`: deconvolution helper reference; CIBERSORT, table(; original path listed in `scripts/course_source/source_manifest.csv`
+- `33_cibersort_immune_helper.R`: deconvolution helper reference; CIBERSORT, table(; original path listed in `scripts/course_source/source_manifest.csv`
 - `34_cibersort_deconvolution.R`: deconvolution reference; .qs, CIBERSORT, infercnv, qread, read.table, table(; original path listed in `scripts/course_source/source_manifest.csv`
 - `35_music_deconvolution.R`: deconvolution reference; .qs, MuSiC, infercnv, music_prop, qread; original path listed in `scripts/course_source/source_manifest.csv`
 
@@ -104,7 +104,6 @@ Course-derived script root: `scripts/course_source`
 - miscTools
 - monocle
 - monocle3
-- openai
 - org.Hs.eg.db
 - parallel
 - patchwork
@@ -129,7 +128,6 @@ Course-derived script root: `scripts/course_source`
 - tidyverse
 - tricycle
 - vioplot
-- xxdAIcelltype
 
 ## Module Coverage
 - GEO download: `missing`

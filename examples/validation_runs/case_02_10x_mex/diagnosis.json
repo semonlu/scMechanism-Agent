@@ -1,0 +1,18 @@
+{
+  "detected_formats": [
+    "10x MEX"
+  ],
+  "accessions": {
+    "GEO Series": [],
+    "GEO Sample": [],
+    "SRA Run": [],
+    "SRA Project": []
+  },
+  "direct_downstream_analysis": "yes",
+  "needs_fastq_rebuild": false,
+  "recommended_reading": [
+    "Use Seurat::Read10X or scanpy.read_10x_mtx."
+  ],
+  "major_risks": [],
+  "next_step": "Generate an analysis plan only after organism, metadata columns, and research comparison are known."
+}

@@ -6,8 +6,8 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
-seurat_rds <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
-output_dir <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/course_modules/cellchat"
+seurat_rds <- "submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
+output_dir <- "submission/example/results/course_modules/cellchat"
 celltype_col <- "singleR_label"
 organism <- "mouse" # human or mouse
 min_cells <- as.integer("50")

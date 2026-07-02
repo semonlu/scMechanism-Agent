@@ -1,0 +1,5 @@
+- Detected formats: 10x MEX.
+- Direct downstream analysis: yes.
+- FASTQ rebuild required: False.
+- Recommended reading: Use Seurat::Read10X or scanpy.read_10x_mtx.
+- Major risks: none detected.

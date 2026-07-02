@@ -9,8 +9,8 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
-seurat_rds <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
-output_dir <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/course_modules/marker_enrichment"
+seurat_rds <- "submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
+output_dir <- "submission/example/results/course_modules/marker_enrichment"
 cluster_col <- "singleR_label"
 organism <- "mouse" # human or mouse
 top_n <- suppressWarnings(as.integer("20"))

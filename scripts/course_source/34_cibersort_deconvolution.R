@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -88,7 +85,7 @@ out=rbind(ID=colnames(out), out)
 fwrite(out,file="uniq.symbol.txt",sep="\t",quote=F,col.names=F,row.names = T)
 
 #运行主代码，得到免疫细胞浸润的结果
-source("xxdimmune.R",encoding ="utf-8" )
+source("33_cibersort_immune_helper.R", encoding = "utf-8")
 results=CIBERSORT("scimmune.txt", "uniq.symbol.txt", perm=2, QN=F)
 immune=read.table("CIBERSORT-Results.txt",sep="\t",header=T,row.names=1,check.names=F)
 immune=immune[immune[,"P-value"]<0.05,]
@@ -134,7 +131,4 @@ pdf(file="2.反卷积箱线图.pdf", width=7, height=6)
 print(boxplot)
 dev.off()
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

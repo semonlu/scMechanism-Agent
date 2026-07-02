@@ -2,7 +2,7 @@
 
 Use this checklist before uploading the skill to the Medical AI Skill development platform.
 
-Source requirement: `D:/单细胞测试/医疗AI Skill开发平台_参赛者操作手册.pdf`.
+Source requirement: Medical AI Skill platform participant manual.
 
 ## Required Folder Shape
 

@@ -30,6 +30,6 @@ The current skill does not keep the original Chinese nested filenames as runnabl
 | copykat | `28_copykat_cnv.R` | Tumor CNV optional extension. |
 | inferCNV | `29_infercnv_basic.R`, `30_infercnv_with_normal_reference.R`, `31_infercnv_score.R` | Tumor CNV optional extension. |
 | hdWGCNA | `32_hdwgcna_coexpression.R` | Co-expression optional extension. |
-| CIBERSORT/MuSiC | `33_cibersort_xxdimmune_helper.R`, `34_cibersort_deconvolution.R`, `35_music_deconvolution.R` | Bulk deconvolution optional extension. |
+| CIBERSORT/MuSiC | `33_cibersort_immune_helper.R`, `34_cibersort_deconvolution.R`, `35_music_deconvolution.R` | Bulk deconvolution optional extension. |
 
 Use `scripts/build_codebase_summary.py` to regenerate a local summary from `scripts/course_source/` after the source references change.

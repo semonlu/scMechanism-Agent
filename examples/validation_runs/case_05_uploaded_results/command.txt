@@ -1,0 +1,1 @@
+python scripts/validate_result_bundle.py --result-dir examples/validation_runs/case_05_uploaded_results/mock_results --out-md examples/validation_runs/case_05_uploaded_results/result_quality_check.md

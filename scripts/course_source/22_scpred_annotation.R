@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -93,7 +90,4 @@ ggrastr::rasterize(Nebulosa::plot_density(unscRNA, seuratgenes,size=0.01,reducti
 dev.off()
 qsave(unscRNA,"scPredict注释.qs",,nthreads = detectCores())
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

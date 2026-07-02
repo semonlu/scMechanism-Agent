@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 #安装GitHub包####
 ##生成Github API####
@@ -43,9 +40,6 @@ devtools::install_version("crossmatch", version = "1.3.1", repos = "http://cran.
 devtools::install_version("multicross", version = "2.1.0", repos = "http://cran.us.r-project.org",force=T)
 devtools::install_github("jackbibby1/SCPA",force=T)
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 

@@ -42,7 +42,7 @@ parallel, patchwork, phylogram, plyr, preprocessCore, presto, qs, R.utils,
 randomcoloR, remotes, reshape2, ridge, scales, scater, scattermore,
 scCustomize, scDblFinder, SCINA, scPred, SCpubr, Seurat, SeuratObject,
 SingleCellExperiment, SingleR, starTracer, stringr, tcltk, tidyverse,
-tricycle, UCell, vioplot, WGCNA, xxdAIcelltype
+tricycle, UCell, vioplot, WGCNA
 ```
 
 Base/recommended packages such as `grid`, `parallel`, `tcltk`, and `Matrix` are still checked but may already ship with R or standard binary repositories.
@@ -88,9 +88,7 @@ multicross 2.1.0
 Install these from `2.R包安装/` when present:
 
 ```text
-monocle_xxdchange.tar.gz
 openai.tar.gz
-xxdAIcelltype.tar.gz
 hdWGCNA-0.3.00.tar.gz
 ```
 

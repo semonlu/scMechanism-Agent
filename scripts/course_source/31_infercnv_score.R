@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -149,7 +146,4 @@ ggplot(data,aes(cellType,Score))+
   ggsci::scale_fill_jco()+theme_bw()
 ggsave('7.细胞分组CNV箱线图.pdf',width = 5,height = 3)
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

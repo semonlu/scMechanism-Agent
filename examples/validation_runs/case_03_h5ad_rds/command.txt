@@ -1,0 +1,1 @@
+python scripts/diagnose_geo_inputs.py --out-json examples/validation_runs/case_03_h5ad_rds/diagnosis.json --out-md examples/validation_runs/case_03_h5ad_rds/diagnosis.md --items processed_data.h5ad seurat_object.rds

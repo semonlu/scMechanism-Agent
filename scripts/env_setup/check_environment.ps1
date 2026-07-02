@@ -63,9 +63,7 @@ if ($CourseRoot -and (Test-Path -LiteralPath $CourseRoot)) {
     "rtools44-6335-6327.exe",
     "rtools43*.exe",
     "JAGS-4.3.1.exe",
-    "monocle_xxdchange.tar.gz",
     "openai.tar.gz",
-    "xxdAIcelltype.tar.gz",
     "hdWGCNA-0.3.00.tar.gz"
   )) {
     $found = Get-ChildItem -LiteralPath $CourseRoot -Recurse -File -Filter $fileName -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -104,8 +102,7 @@ packages <- c(
   "preprocessCore","presto","qs","R.utils","randomcoloR","remotes","reshape2",
   "ridge","scales","scater","scattermore","scCustomize","scDblFinder","SCINA",
   "scPred","SCpubr","Seurat","SeuratObject","SingleCellExperiment","SingleR",
-  "starTracer","stringr","tidyverse","tricycle","UCell","vioplot","WGCNA",
-  "xxdAIcelltype"
+  "starTracer","stringr","tidyverse","tricycle","UCell","vioplot","WGCNA"
 )
 out <- data.frame(package = packages, installed = vapply(packages, requireNamespace, logical(1), quietly = TRUE))
 out$version <- vapply(packages, function(pkg) {

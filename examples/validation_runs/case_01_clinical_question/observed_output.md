@@ -1,0 +1,6 @@
+- Disease parsed: knee osteoarthritis.
+- Tissue parsed: synovium.
+- Key cell populations parsed: macrophages and fibroblasts; T cells and endothelial cells should be retained during annotation review.
+- Missing inputs detected: GEO accession/candidate dataset, organism, sample-level disease/control design, and metadata columns.
+- Recommended route: GEO/file diagnosis -> QC -> clustering -> cell annotation -> cell proportion by sample -> cell-type-aware DEG -> GO/KEGG/GSEA -> CellChat/LIANA-style communication if annotation is reliable -> pseudotime only for a justified continuous cell-state subset.
+- Safety boundary: public scRNA-seq reanalysis supports mechanism hypotheses, not clinical diagnosis or treatment decisions.

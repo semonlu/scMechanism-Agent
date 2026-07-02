@@ -52,6 +52,8 @@ FORBIDDEN_SUFFIXES = {
     ".qs",
 }
 
+MOJIBAKE_PATTERNS = ["�", "鍖", "绗", "涓", "鈥", "锟", "æ", "è¿", "å"]
+
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -88,7 +90,9 @@ def parse_frontmatter(skill_md: Path) -> tuple[dict[str, str], list[str]]:
 
 def count_validation_cases(report: Path) -> int:
     text = read_text(report)
-    return len(re.findall(r"^## Case\s+\d+:", text, flags=re.MULTILINE))
+    heading_count = len(re.findall(r"^## Case\s+\d+:", text, flags=re.MULTILINE))
+    table_count = len(re.findall(r"^\| Case\s+\d+\s+\|", text, flags=re.MULTILINE))
+    return max(heading_count, table_count)
 
 
 def validate(skill_root: Path) -> tuple[list[str], list[str]]:
@@ -119,6 +123,26 @@ def validate(skill_root: Path) -> tuple[list[str], list[str]]:
     case_files = sorted((skill_root / "examples").glob("case_*.md")) if (skill_root / "examples").exists() else []
     if len(case_files) != 5:
         errors.append(f"examples/ must contain exactly 5 case_*.md validation prompts, found {len(case_files)}")
+    for path in case_files:
+        text = read_text(path)
+        if "## Prompt" not in text or "## Actual Observed Output" not in text:
+            errors.append(f"Validation case must include prompt and actual observed output sections: {path.relative_to(skill_root)}")
+
+    run_root = skill_root / "examples" / "validation_runs"
+    if not (run_root / "summary.json").exists():
+        errors.append("Missing examples/validation_runs/summary.json from actual validation run")
+    run_dirs = [p for p in run_root.glob("case_*") if p.is_dir()] if run_root.exists() else []
+    if len(run_dirs) != 5:
+        errors.append(f"examples/validation_runs must contain exactly 5 case_* run directories, found {len(run_dirs)}")
+    for path in run_dirs:
+        if not (path / "prompt.txt").exists() or not (path / "observed_output.md").exists():
+            errors.append(f"Validation run missing prompt.txt or observed_output.md: {path.relative_to(skill_root)}")
+
+    for path in (skill_root / "examples").rglob("*") if (skill_root / "examples").exists() else []:
+        if path.is_file() and path.suffix.lower() in {".md", ".txt", ".json", ".csv", ".tsv"}:
+            text = read_text(path)
+            if any(pattern in text for pattern in MOJIBAKE_PATTERNS):
+                errors.append(f"Possible mojibake/garbled text in {path.relative_to(skill_root)}")
 
     for name in FORBIDDEN_TOP_LEVEL:
         if (skill_root / name).exists() and name == "__pycache__":

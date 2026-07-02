@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -58,7 +55,4 @@ pdf(file = "copykat_tsne图.pdf",width =8.5,height = 7.5)
 DimPlot(scRNA,group.by = "copykat.pred",reduction = "tsne",pt.size = 0.01)
 dev.off()
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

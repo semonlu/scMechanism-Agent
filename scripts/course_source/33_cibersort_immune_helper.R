@@ -1,5 +1,5 @@
 # Course-derived reference script
-# English filename: 33_cibersort_xxdimmune_helper.R
+# English filename: 33_cibersort_immune_helper.R
 # Original course path: see source_manifest.csv
 # Role: deconvolution helper reference
 # Adaptations applied for the skill package:

@@ -23,7 +23,7 @@ function Resolve-CourseRoot {
     return (Resolve-Path -LiteralPath $InputPath).Path
   }
 
-  $candidates = Get-ChildItem -LiteralPath $SkillRoot -Recurse -File -Filter "monocle_xxdchange.tar.gz" -ErrorAction SilentlyContinue |
+  $candidates = Get-ChildItem -LiteralPath $SkillRoot -Recurse -File -Filter "hdWGCNA-*.tar.gz" -ErrorAction SilentlyContinue |
     ForEach-Object { Split-Path -Parent (Split-Path -Parent $_.FullName) }
 
   if ($candidates.Count -gt 0) {

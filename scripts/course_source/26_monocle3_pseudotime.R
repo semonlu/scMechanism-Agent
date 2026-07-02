@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -134,7 +131,4 @@ p <- plot_genes_in_pseudotime(cds[Track_genes_sig,], color_cells_by="cellType",
                               min_expr=0.5, ncol = 2)
 ggsave("7.基因趋势图.pdf", plot = p, width = 8, height = 6)
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

@@ -1,0 +1,23 @@
+{
+  "detected_formats": [
+    "AnnData h5ad",
+    "R/Seurat object"
+  ],
+  "accessions": {
+    "GEO Series": [],
+    "GEO Sample": [],
+    "SRA Run": [],
+    "SRA Project": []
+  },
+  "direct_downstream_analysis": "yes",
+  "needs_fastq_rebuild": false,
+  "recommended_reading": [
+    "Use scanpy.read_h5ad; verify raw counts/layers before differential expression.",
+    "Use readRDS/load and inspect class, assays, layers, reductions, and metadata."
+  ],
+  "major_risks": [
+    "Sample metadata/group design not detected.",
+    "Processed objects may not retain raw counts needed for DE, CellChat, CNV, or deconvolution."
+  ],
+  "next_step": "Generate an analysis plan only after organism, metadata columns, and research comparison are known."
+}

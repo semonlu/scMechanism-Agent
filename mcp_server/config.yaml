@@ -1,0 +1,29 @@
+server:
+  host: "127.0.0.1"
+  port: 8765
+  mcp_endpoint: "/mcp"
+  health_endpoint: "/health"
+  sse_endpoint: "/sse"
+
+workspace:
+  inputs_dir: "workspace/inputs"
+  outputs_dir: "workspace/outputs"
+  logs_dir: "workspace/logs"
+
+security:
+  allow_shell_commands: false
+  allow_paths_outside_workspace_inputs: false
+  allow_outputs_outside_workspace_outputs: false
+  allow_patient_private_data: false
+  max_demo_rows: 50
+
+tools:
+  - ping
+  - list_available_pipelines
+  - create_project
+  - run_demo_pipeline
+  - list_result_files
+  - read_report
+  - run_scanpy_basic
+  - run_seurat_basic
+

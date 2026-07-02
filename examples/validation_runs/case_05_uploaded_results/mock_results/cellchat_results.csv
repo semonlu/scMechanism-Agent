@@ -1,0 +1,2 @@
+source,target,ligand,receptor,prob
+Macrophage,Fibroblast,TNF,TNFRSF1A,0.7

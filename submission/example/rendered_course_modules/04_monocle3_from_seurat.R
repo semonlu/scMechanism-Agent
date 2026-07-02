@@ -9,8 +9,8 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
-seurat_rds <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
-output_dir <- "D:/单细胞测试/scMechanism-Agent/submission/example/results/course_modules/monocle3"
+seurat_rds <- "submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds"
+output_dir <- "submission/example/results/course_modules/monocle3"
 celltype_col <- "marker_support_label"
 subset_query <- "marker_support_label %in% c('tenocyte_fibroblast', 'chondrocyte', 'osteoblast', 'cycling')"
 root_cells_file <- ""

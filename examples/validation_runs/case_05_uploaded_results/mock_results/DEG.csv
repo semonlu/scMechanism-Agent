@@ -1,0 +1,3 @@
+gene,cell_type,log2FC,p_val_adj
+IL1B,Macrophage,1.5,0.01
+COL3A1,Fibroblast,1.2,0.03

@@ -1,0 +1,1 @@
+python scripts/diagnose_geo_inputs.py --out-json examples/validation_runs/case_04_fastq_sra/diagnosis.json --out-md examples/validation_runs/case_04_fastq_sra/diagnosis.md --items SRR12345678 SRR12345679

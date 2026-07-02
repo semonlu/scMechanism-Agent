@@ -1,0 +1,8 @@
+GEO补充文件包括：
+GSM1_matrix.mtx.gz
+GSM1_barcodes.tsv.gz
+GSM1_features.tsv.gz
+GSM2_matrix.mtx.gz
+GSM2_barcodes.tsv.gz
+GSM2_features.tsv.gz
+metadata.csv

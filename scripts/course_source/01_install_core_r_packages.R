@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 #选择镜像地址####
 chooseBioCmirror()
@@ -156,11 +153,6 @@ BiocManager::install(c("DOSE",
                        "infercnv","metapod","bluster","scran","celda","glmGamPoi","SingleR",
                        "wk", "units", "s2", "classInt", "warp", "biglm", "sf", "spData", "slider", "ResidualMatrix", "speedglm", "spdep", "rsample", "pscl", "grr", "batchelor",
                        "scDblFinder"),force = TRUE,update = F,ask = F)
-install.packages("monocle_xxdchange.tar.gz", repos = NULL, type = "source")
 install.packages("openai.tar.gz", repos = NULL)
-install.packages("xxdAIcelltype.tar.gz", repos = NULL)
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

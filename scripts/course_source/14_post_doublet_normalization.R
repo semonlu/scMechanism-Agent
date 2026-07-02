@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -83,7 +80,4 @@ scRNA <- Seurat::RunUMAP(scRNA,dims = 1:20,reduction ='harmony')
 scRNA <- Seurat::RunPCA(scRNA, features = VariableFeatures(object = scRNA))
 qsave(scRNA,"scRNA常规标准化后.qs",nthreads = detectCores())
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

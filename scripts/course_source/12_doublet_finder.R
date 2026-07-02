@@ -8,9 +8,6 @@
 # - Example-specific object names, thresholds, metadata columns, and local filenames still require review.
 # - Prefer scripts/course_adapted/ for runnable project workflows.
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################
 
 #设置工作路径
@@ -87,7 +84,4 @@ scRNA <- doubletFinder(scRNA, PCs = 1:20, pN = 0.25,  pK = pK_bcmvn,
 scRNA <- subset(scRNA, subset = (DF.classifications_0.25_19_417== "Singlet"))
 qsave(scRNA,"scRNA剔除双细胞后.qs",nthreads = detectCores())
 ####################################################
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
-#######欢迎关注《叉叉滴同学的生信笔记》#########
 ####################################################

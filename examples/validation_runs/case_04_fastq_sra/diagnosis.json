@@ -1,0 +1,24 @@
+{
+  "detected_formats": [
+    "FASTQ/SRA raw reads"
+  ],
+  "accessions": {
+    "GEO Series": [],
+    "GEO Sample": [],
+    "SRA Run": [
+      "SRR12345678",
+      "SRR12345679"
+    ],
+    "SRA Project": []
+  },
+  "direct_downstream_analysis": "no",
+  "needs_fastq_rebuild": true,
+  "recommended_reading": [
+    "Do not run downstream Seurat/Scanpy directly; first rebuild matrices with Cell Ranger, STARsolo, kallisto-bustools, or alevin-fry."
+  ],
+  "major_risks": [
+    "Sample metadata/group design not detected.",
+    "Raw-read reconstruction requires reference genome, chemistry, and compute resources."
+  ],
+  "next_step": "Generate an analysis plan only after organism, metadata columns, and research comparison are known."
+}

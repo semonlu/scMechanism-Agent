@@ -101,9 +101,7 @@ version_specs <- list(
 )
 
 local_archives <- c(
-  "monocle_xxdchange.tar.gz",
   "openai.tar.gz",
-  "xxdAIcelltype.tar.gz",
   "hdWGCNA-0.3.00.tar.gz"
 )
 
@@ -164,8 +162,7 @@ required_imports <- c(
   "preprocessCore","presto","qs","R.utils","randomcoloR","remotes","reshape2",
   "ridge","scales","scater","scattermore","scCustomize","scDblFinder","SCINA",
   "scPred","SCpubr","Seurat","SeuratObject","SingleCellExperiment","SingleR",
-  "starTracer","stringr","tidyverse","tricycle","UCell","vioplot","WGCNA",
-  "xxdAIcelltype"
+  "starTracer","stringr","tidyverse","tricycle","UCell","vioplot","WGCNA"
 )
 
 check <- data.frame(

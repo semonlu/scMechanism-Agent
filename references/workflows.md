@@ -9,7 +9,7 @@ This skill follows a GEO-to-Mechanism workflow inspired by separate planning, ex
 3. Build a plan with `agents/03_analysis_plan_generator.md` and `scripts/build_analysis_plan.py`.
 4. Check or install the environment with `scripts/env_setup/check_environment.ps1` and `scripts/env_setup/install_environment.ps1`.
 5. Render local code from `scripts/course_adapted/` or `templates/` using `scripts/render_template.py`.
-6. User or Codex runs local R/Python scripts when tools are available.
+6. The user runs local R/Python scripts when tools are available.
 7. Check returned result folder using `agents/05_result_quality_checker.md` and `scripts/validate_result_bundle.py`.
 8. Interpret and report with agents 06-08 and `scripts/write_analysis_report.py`.
 9. Before publishing or uploading an example, run `scripts/validate_full_workflow.py` and fix every error.

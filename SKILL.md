@@ -1,6 +1,6 @@
 ---
-name: singlecell-research
-description: "Use when Codex needs to assist GEO/SRA/public single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, prepare/check Windows R/Python Seurat V5 environments before running code, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript/report text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, Seurat V5 course-derived workflows, and report/log generation after a full run."
+name: scmechanism-agent
+description: "Use for GEO/SRA/public or local single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, prepare/check Windows R/Python Seurat V5 environments before running code, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript/report text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, Seurat V5 course-derived workflows, platform validation cases, and report/log generation after a full run."
 ---
 
 # scMechanism Agent: Public Single-cell Research Skill
@@ -25,7 +25,7 @@ This skill is a decision and code-generation controller. It does not promise tha
 3. Generate an analysis plan with risks and required metadata.
 4. Check or install the required R/Python environment before running Seurat V5 course-derived code.
 5. Select or render local runnable Seurat/Scanpy/CellChat/Monocle3 code.
-6. User or Codex runs the code locally, in RStudio, Python, Colab, or an institutional server when tools are available.
+6. The user runs the code locally, in RStudio, Python, Colab, or an institutional server when tools are available.
 7. Skill checks result quality, removes known-bad rerun artifacts, writes logs, and writes cautious interpretation, Methods, Results, legends, limitations, and validation suggestions.
 
 Do not claim:
@@ -59,6 +59,7 @@ scripts/
   course_source/        English-named, lightly adapted reference scripts from the Seurat V5 course
   course_adapted/       runnable R scripts adapted from the course modules
   env_setup/            Windows R/Python/Rtools/JAGS environment install and verification scripts
+templates/              generic reusable templates for Scanpy and report scaffolds
   *.py                  helper controllers for diagnosis, planning, rendering, validation, and summaries
 ```
 
@@ -90,9 +91,15 @@ scripts/course_adapted/01_seurat_v5_core_pipeline.R
 scripts/course_adapted/02_marker_enrichment_from_seurat.R
 scripts/course_adapted/03_cellchat_from_seurat.R
 scripts/course_adapted/04_monocle3_from_seurat.R
+scripts/course_adapted/05_singler_cell_annotation.R
+scripts/course_adapted/00_multi_sample_merge_harmony.R
+templates/scanpy_basic_pipeline_template.py
+templates/scanpy_batch_annotation_enrichment_template.py
 ```
 
 The Python scripts do not replace the course code. Heavy Seurat V5 computation belongs in the adapted R scripts, which trace back to the English-named course reference scripts in `scripts/course_source/` and the mapping table `scripts/course_source/source_manifest.csv`.
+
+Use `scripts/course_adapted/` for Seurat V5 course-derived modules. Use `templates/` for generic reusable templates, especially Scanpy workflows and Markdown report scaffolds. Render either family through `scripts/render_template.py` when placeholders need to be filled.
 
 ## References
 
@@ -131,6 +138,15 @@ For Medical AI Skill platform submission, include reviewer-facing materials unde
 
 Keep full local workflow evidence under `submission/example/` for GitHub/local review. Do not include heavy local analysis outputs in the platform upload zip unless the platform explicitly requests them.
 
+## Language Convention
+
+Agent and reference files may mix Chinese and English intentionally:
+
+- user-facing reasoning, clinical framing, and validation guidance can be Chinese.
+- file-format routing, code generation, and package/runtime details can be English where it improves exactness.
+
+When editing a file, keep its existing language unless a user explicitly requests translation.
+
 ## Course Code Adaptation
 
 The local Seurat V5 course archive is reorganized inside the skill at `scripts/course_source/` as English-named source evidence. Runnable versions live in `scripts/course_adapted/`. The course contributes logic for:
@@ -143,6 +159,7 @@ The local Seurat V5 course archive is reorganized inside the skill at `scripts/c
 - Resolution sweep and clustering.
 - Manual/SingleR/SCINA/TransferData/scPred/LLM-assisted annotation.
 - Marker detection, GO/KEGG enrichment, CellChat, Monocle2/3, copykat, inferCNV, hdWGCNA, CIBERSORT, and MuSiC.
+- Multi-sample merge/Harmony and SingleR annotation are exposed as adapted modules, not hidden assumptions in the core pipeline.
 
 Adaptation rules:
 

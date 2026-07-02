@@ -123,3 +123,18 @@ ipykernel
 ```
 
 Use `seuratv5-course-py` as the default Conda environment name.
+
+For platform-independent Scanpy work, this repository also provides:
+
+```text
+environment.yml
+```
+
+Create it with:
+
+```powershell
+conda env create -f environment.yml
+conda activate scmechanism-agent
+```
+
+This file is a lightweight Python/Scanpy environment. It does not replace the Windows R package installer for Seurat V5 course-derived modules.

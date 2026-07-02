@@ -1,6 +1,8 @@
-# Virtual Knockout And Perturbation Extension
+# Virtual Knockout And Perturbation Extension [WIP - v2]
 
 This module is a future extension, not a first-version implemented claim.
+
+This file is intentionally a design boundary, not an implemented analysis module.
 
 ## Current Skill Behavior
 

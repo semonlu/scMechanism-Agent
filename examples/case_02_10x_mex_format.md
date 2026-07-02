@@ -1,27 +1,29 @@
-# Case 02 10x MEX Format
+# Case 2: 10x MEX File Format Diagnosis
 
-## 用户输入
+## Input
 
-GSMxxx_matrix.mtx.gz, GSMxxx_barcodes.tsv.gz, GSMxxx_features.tsv.gz
+```text
+GEO补充文件包括：
+GSM1_matrix.mtx.gz
+GSM1_barcodes.tsv.gz
+GSM1_features.tsv.gz
+GSM2_matrix.mtx.gz
+GSM2_barcodes.tsv.gz
+GSM2_features.tsv.gz
+metadata.csv
+```
 
-## 期望 Skill 判断
+## Expected Output
 
-识别为 10x MEX，可进入 Seurat/Scanpy 下游分析。
+- Format: 10x MEX.
+- Ready for downstream analysis if matrix/features/barcodes are paired per sample.
+- Recommended readers: `Seurat::Read10X()` and `scanpy.read_10x_mtx()`.
+- FASTQ reconstruction is not required.
+- Next modules: QC, clustering, annotation, marker genes, DEG, enrichment.
 
-## 期望输出结构
+## Expected Triggered Files
 
-- 识别格式：10x MEX
-- 推荐读取：Seurat `Read10X()` 或 Scanpy `read_10x_mtx()`
-- 下一步：补充 metadata 和样本分组
-
-## 验证重点
-
-必须检查每个样本是否有完整三件套。
-
-## 可能错误输出
-
-把 matrix.mtx 当普通 CSV。
-
-## 修正规则
-
-用 `scripts/diagnose_geo_inputs.py` 验证文件列表。
+- `agents/02_geo_dataset_and_format_diagnosis.md`
+- `references/supported_geo_formats.md`
+- `references/seurat_pipeline_rules.md`
+- `references/scanpy_pipeline_rules.md`

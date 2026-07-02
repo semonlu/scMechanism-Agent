@@ -1,4 +1,4 @@
 interface:
-  display_name: "Single-cell Research"
+  display_name: "scMechanism Agent"
   short_description: "Run reproducible scRNA-seq research workflows"
-  default_prompt: "Use $singlecell-research to inspect my scRNA-seq dataset, choose an analysis workflow, run it reproducibly, and draft a results report."
+  default_prompt: "Use $scmechanism-agent to inspect my scRNA-seq dataset, choose an analysis workflow, run it reproducibly, and draft a results report."

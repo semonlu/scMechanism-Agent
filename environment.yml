@@ -1,0 +1,23 @@
+name: scmechanism-agent
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  - scanpy>=1.10
+  - anndata
+  - pandas
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn
+  - leidenalg
+  - igraph
+  - pip
+  - pip:
+      - celltypist
+      - gseapy
+      - harmonypy
+      - bbknn
+      - scanorama
+      - liana

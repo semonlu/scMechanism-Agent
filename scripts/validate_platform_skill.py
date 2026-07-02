@@ -13,6 +13,8 @@ REQUIRED_PATHS = [
     "SKILL.md",
     "README.md",
     "SECURITY_AND_PRIVACY.md",
+    "environment.yml",
+    "CODEBASE_SUMMARY.md",
     "agents",
     "references",
     "examples",
@@ -113,6 +115,10 @@ def validate(skill_root: Path) -> tuple[list[str], list[str]]:
         n_cases = count_validation_cases(case_report)
         if n_cases < 5:
             errors.append(f"Validation report must contain at least 5 cases, found {n_cases}")
+
+    case_files = sorted((skill_root / "examples").glob("case_*.md")) if (skill_root / "examples").exists() else []
+    if len(case_files) != 5:
+        errors.append(f"examples/ must contain exactly 5 case_*.md validation prompts, found {len(case_files)}")
 
     for name in FORBIDDEN_TOP_LEVEL:
         if (skill_root / name).exists() and name == "__pycache__":

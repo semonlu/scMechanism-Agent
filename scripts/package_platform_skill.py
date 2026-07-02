@@ -13,6 +13,8 @@ ALLOWLIST = [
     "SKILL.md",
     "README.md",
     "SECURITY_AND_PRIVACY.md",
+    "CODEBASE_SUMMARY.md",
+    "environment.yml",
     "agents",
     "references",
     "examples",

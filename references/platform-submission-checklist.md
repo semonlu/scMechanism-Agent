@@ -10,6 +10,7 @@ The uploadable skill folder must include:
 
 - `SKILL.md`: the top-level skill instructions.
 - `README.md`: a short project-facing overview for reviewers.
+- `environment.yml`: lightweight Python/Scanpy reproducibility entrypoint.
 - `agents/*.md`: role files that carry the domain workflow.
 - `references/`: supporting rules, checklists, and reference material.
 - `examples/`: example prompts and validation evidence.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import scanpy as sc
+import matplotlib.pyplot as plt
 
 
 INPUT_PATH = "{{INPUT_PATH}}"
@@ -17,6 +18,8 @@ ORGANISM = "{{ORGANISM}}"
 
 for sub in ["figures", "tables", "objects", "logs"]:
     (OUTPUT_DIR / sub).mkdir(parents=True, exist_ok=True)
+
+sc.settings.figdir = str(OUTPUT_DIR / "figures")
 
 if INPUT_TYPE == "h5ad":
     adata = sc.read_h5ad(INPUT_PATH)
@@ -43,8 +46,16 @@ sc.pp.calculate_qc_metrics(adata, qc_vars=["mt"], inplace=True)
 
 adata.obs[["n_genes_by_counts", "total_counts", "pct_counts_mt"]].to_csv(OUTPUT_DIR / "tables" / "qc_metrics.tsv", sep="\t")
 
-sc.pl.violin(adata, ["n_genes_by_counts", "total_counts", "pct_counts_mt"], multi_panel=True, save=None, show=False)
-sc.pl.scatter(adata, x="total_counts", y="pct_counts_mt", show=False)
+sc.pl.violin(
+    adata,
+    ["n_genes_by_counts", "total_counts", "pct_counts_mt"],
+    multi_panel=True,
+    save="_qc_pre_filter.png",
+    show=False,
+)
+plt.close("all")
+sc.pl.scatter(adata, x="total_counts", y="pct_counts_mt", save="_qc_counts_mt.png", show=False)
+plt.close("all")
 
 # Replace thresholds after reviewing current distributions.
 sc.pp.filter_cells(adata, min_genes=200)
@@ -64,6 +75,7 @@ sc.tl.leiden(adata, resolution=0.5)
 sc.tl.umap(adata)
 
 sc.pl.umap(adata, color=["leiden"], save="_clusters.png", show=False)
+plt.close("all")
 sc.tl.rank_genes_groups(adata, "leiden", method="wilcoxon")
 markers = sc.get.rank_genes_groups_df(adata, group=None)
 markers.to_csv(OUTPUT_DIR / "tables" / "cluster_markers.tsv", sep="\t", index=False)

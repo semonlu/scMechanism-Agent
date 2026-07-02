@@ -1,8 +1,19 @@
-# scMechanism Agent
+# scMechanism-Agent
 
-`scMechanism Agent` is a Medical AI Skill project for public and local single-cell mechanism research assistance. It helps users diagnose GEO/SRA/local single-cell data formats, plan reproducible Seurat/Scanpy workflows, generate local runnable code, review uploaded result bundles, and draft cautious biological interpretation and manuscript text.
+A Multi-Agent Framework for Mechanistic Discovery in Single-Cell Transcriptomics via Tool-Augmented Scientific Reasoning
 
-The skill plans, generates code, and checks results; users run expensive computation locally or on their own servers.
+---
+
+## Overview
+
+scMechanism-Agent is a multi-agent system designed to transform single-cell transcriptomic data into **structured biological mechanism graphs**.
+
+Unlike traditional scRNA-seq analysis pipelines that focus on descriptive outputs (e.g., differential genes, clusters, enrichment tables), this framework aims to generate **mechanistically grounded biological explanations** by integrating:
+
+- Large Language Model (LLM)-based reasoning
+- Bioinformatics tools (GO, KEGG, literature databases)
+- Structured multi-step scientific reasoning
+
 
 ## Clinical Pain Point
 

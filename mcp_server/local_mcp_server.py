@@ -9,11 +9,17 @@ workspace/inputs and outputs to workspace/outputs.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import importlib.util
+import ipaddress
 import json
+import mimetypes
+import os
 import re
 import shutil
+import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -23,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 
 SERVER_ROOT = Path(__file__).resolve().parent
@@ -30,6 +37,8 @@ WORKSPACE_ROOT = SERVER_ROOT / "workspace"
 INPUTS_DIR = WORKSPACE_ROOT / "inputs"
 OUTPUTS_DIR = WORKSPACE_ROOT / "outputs"
 LOGS_DIR = WORKSPACE_ROOT / "logs"
+CODE_DIR = WORKSPACE_ROOT / "code"
+RUNTIME_DIR = WORKSPACE_ROOT / "runtime"
 
 PIPELINES = [
     "scanpy_basic",
@@ -52,13 +61,47 @@ FORBIDDEN_PATH_HINTS = [
     "hospital",
 ]
 
+TEXT_FILE_SUFFIXES = {
+    ".txt",
+    ".tsv",
+    ".csv",
+    ".json",
+    ".md",
+    ".log",
+    ".yaml",
+    ".yml",
+    ".py",
+    ".r",
+}
+
+MAX_READ_BYTES = 1_000_000
+MAX_WRITE_BYTES = 5_000_000
+MAX_DOWNLOAD_BYTES = 100_000_000
+MAX_RUN_TIMEOUT_SECONDS = 300
+
+FORBIDDEN_CODE_PATTERNS = [
+    r"\bsubprocess\b",
+    r"\bos\.system\b",
+    r"\bos\.popen\b",
+    r"\bshutil\.rmtree\b",
+    r"\bctypes\b",
+    r"\bsocket\b",
+    r"\brequests\b",
+    r"\burllib\b",
+    r"\bhttpx\b",
+    r"\bftplib\b",
+    r"\bparamiko\b",
+    r"\bwinreg\b",
+    r"\bwebbrowser\b",
+]
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def ensure_workspace() -> None:
-    for path in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR]:
+    for path in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR, CODE_DIR, RUNTIME_DIR]:
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -85,6 +128,179 @@ def require_project_dir(project_id: str, create: bool = False) -> Path:
     if not project_dir.exists():
         raise FileNotFoundError(f"Project not found: {project_slug}")
     return project_dir
+
+
+def workspace_relative(path: Path) -> str:
+    return str(path.relative_to(WORKSPACE_ROOT)).replace("\\", "/")
+
+
+def validate_workspace_path(relative_path: str, *, must_exist: bool = False, allow_dir: bool = True) -> Path:
+    if not relative_path:
+        raise ValueError("relative_path is required")
+    lowered = relative_path.lower()
+    if any(hint in lowered for hint in FORBIDDEN_PATH_HINTS):
+        raise ValueError("relative_path appears to reference a forbidden private/system location")
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        raise ValueError("Only relative paths under mcp_server/workspace are allowed")
+    resolved = (WORKSPACE_ROOT / candidate).resolve(strict=False)
+    if not is_relative_to(resolved, WORKSPACE_ROOT):
+        raise ValueError("Path must stay inside mcp_server/workspace")
+    if must_exist and not resolved.exists():
+        raise FileNotFoundError(f"Workspace path not found: {relative_path}")
+    if resolved.exists() and resolved.is_dir() and not allow_dir:
+        raise ValueError("Expected a file path, got a directory")
+    return resolved
+
+
+def validate_code_path(relative_path: str, *, must_exist: bool = False) -> Path:
+    path = validate_workspace_path(relative_path, must_exist=must_exist, allow_dir=False)
+    if not is_relative_to(path, CODE_DIR):
+        raise ValueError("Executable scripts must be inside mcp_server/workspace/code")
+    if path.suffix.lower() != ".py":
+        raise ValueError("Only Python .py scripts are executable in this MCP version")
+    return path
+
+
+def validate_download_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Only http and https downloads are allowed")
+    if not parsed.hostname:
+        raise ValueError("Download URL must include a hostname")
+    hostname = parsed.hostname.lower()
+    if hostname in {"localhost"} or hostname.endswith(".local"):
+        raise ValueError("Downloads from localhost/private hosts are not allowed")
+    try:
+        infos = socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve download host: {exc}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise ValueError("Downloads from private, local, or reserved network addresses are not allowed")
+    return url
+
+
+def scan_code_for_sandbox_violations(script_path: Path) -> list[str]:
+    text = script_path.read_text(encoding="utf-8", errors="replace")
+    violations = []
+    for pattern in FORBIDDEN_CODE_PATTERNS:
+        if re.search(pattern, text):
+            violations.append(pattern.replace("\\b", "").replace("\\", ""))
+    lowered = text.lower()
+    if any(hint in lowered for hint in FORBIDDEN_PATH_HINTS):
+        violations.append("forbidden private path hint")
+    if re.search(r"[A-Za-z]:\\", text) or re.search(r"(^|[^.])/(users|home|etc|var|root)\b", text, flags=re.IGNORECASE):
+        violations.append("absolute filesystem path")
+    return sorted(set(violations))
+
+
+def write_python_sandbox_guard() -> Path:
+    guard_dir = RUNTIME_DIR / "python_guard"
+    guard_dir.mkdir(parents=True, exist_ok=True)
+    guard_file = guard_dir / "sitecustomize.py"
+    guard_file.write_text(
+        f'''
+import builtins
+import os
+import sys
+from pathlib import Path
+
+_WORKSPACE = Path(os.environ.get("SCMECHANISM_WORKSPACE", r"{WORKSPACE_ROOT}")).resolve()
+_ALLOWED_ROOTS = [
+    _WORKSPACE,
+    Path(sys.base_prefix).resolve(),
+    Path(sys.prefix).resolve(),
+    Path(sys.exec_prefix).resolve(),
+    Path(sys.executable).resolve().parent,
+]
+_orig_open = builtins.open
+_orig_os_open = os.open
+_orig_remove = os.remove
+_orig_unlink = os.unlink
+_orig_rename = os.rename
+_orig_replace = os.replace
+_orig_mkdir = os.mkdir
+_orig_makedirs = os.makedirs
+_orig_listdir = os.listdir
+_orig_stat = os.stat
+_orig_scandir = os.scandir
+
+def _check_path(path):
+    if path is None:
+        return path
+    try:
+        resolved = Path(path).resolve()
+    except Exception:
+        resolved = (_WORKSPACE / Path(path)).resolve()
+    for root in _ALLOWED_ROOTS:
+        try:
+            resolved.relative_to(root)
+            return path
+        except ValueError:
+            pass
+    raise PermissionError("Path escapes mcp_server/workspace sandbox: " + str(path))
+    return path
+
+def open(file, *args, **kwargs):
+    _check_path(file)
+    return _orig_open(file, *args, **kwargs)
+
+builtins.open = open
+
+def _wrap_one_arg(fn):
+    def wrapped(path, *args, **kwargs):
+        _check_path(path)
+        return fn(path, *args, **kwargs)
+    return wrapped
+
+def _wrap_two_arg(fn):
+    def wrapped(src, dst, *args, **kwargs):
+        _check_path(src)
+        _check_path(dst)
+        return fn(src, dst, *args, **kwargs)
+    return wrapped
+
+os.open = _wrap_one_arg(_orig_os_open)
+os.remove = _wrap_one_arg(_orig_remove)
+os.unlink = _wrap_one_arg(_orig_unlink)
+os.mkdir = _wrap_one_arg(_orig_mkdir)
+os.makedirs = _wrap_one_arg(_orig_makedirs)
+os.listdir = _wrap_one_arg(_orig_listdir)
+os.stat = _wrap_one_arg(_orig_stat)
+os.scandir = _wrap_one_arg(_orig_scandir)
+os.rename = _wrap_two_arg(_orig_rename)
+os.replace = _wrap_two_arg(_orig_replace)
+
+_orig_path_open = Path.open
+_orig_path_read_text = Path.read_text
+_orig_path_read_bytes = Path.read_bytes
+_orig_path_write_text = Path.write_text
+_orig_path_write_bytes = Path.write_bytes
+_orig_path_unlink = Path.unlink
+_orig_path_mkdir = Path.mkdir
+_orig_path_iterdir = Path.iterdir
+
+def _path_checked(self):
+    _check_path(self)
+    return self
+
+def _path_open(self, *args, **kwargs):
+    return _orig_path_open(_path_checked(self), *args, **kwargs)
+
+Path.open = _path_open
+Path.read_text = lambda self, *a, **k: _orig_path_read_text(_path_checked(self), *a, **k)
+Path.read_bytes = lambda self, *a, **k: _orig_path_read_bytes(_path_checked(self), *a, **k)
+Path.write_text = lambda self, *a, **k: _orig_path_write_text(_path_checked(self), *a, **k)
+Path.write_bytes = lambda self, *a, **k: _orig_path_write_bytes(_path_checked(self), *a, **k)
+Path.unlink = lambda self, *a, **k: _orig_path_unlink(_path_checked(self), *a, **k)
+Path.mkdir = lambda self, *a, **k: _orig_path_mkdir(_path_checked(self), *a, **k)
+Path.iterdir = lambda self: _orig_path_iterdir(_path_checked(self))
+'''.lstrip(),
+        encoding="utf-8",
+    )
+    return guard_dir
 
 
 def validate_input_path(input_path: str) -> Path:
@@ -377,6 +593,258 @@ def tool_run_seurat_basic(project_id: str, input_path: str, species: str = "huma
     )
 
 
+def tool_list_workspace_files(relative_path: str = "", max_files: int = 200) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    root = WORKSPACE_ROOT if not relative_path else validate_workspace_path(relative_path, must_exist=True, allow_dir=True)
+    if root.is_file():
+        files = [{
+            "path": workspace_relative(root),
+            "size": root.stat().st_size,
+            "is_dir": False,
+            "modified_utc": datetime.fromtimestamp(root.stat().st_mtime, timezone.utc).isoformat(),
+        }]
+    else:
+        entries = []
+        for path in sorted(root.rglob("*")):
+            if path.is_file():
+                stat = path.stat()
+                entries.append({
+                    "path": workspace_relative(path),
+                    "size": stat.st_size,
+                    "is_dir": False,
+                    "modified_utc": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                })
+            if len(entries) >= max_files:
+                break
+        files = entries
+    log_file = log_event("list_workspace_files", job_id, {"relative_path": relative_path, "n_files": len(files)})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=WORKSPACE_ROOT,
+        log_file=log_file,
+        message="Workspace files listed.",
+        warnings=["Results are limited by max_files."] if len(files) >= max_files else [],
+        data={"files": files, "workspace": str(WORKSPACE_ROOT)},
+    )
+
+
+def tool_read_workspace_file(relative_path: str, max_bytes: int = MAX_READ_BYTES) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    path = validate_workspace_path(relative_path, must_exist=True, allow_dir=False)
+    max_bytes = max(1, min(int(max_bytes), MAX_READ_BYTES))
+    raw = path.read_bytes()
+    truncated = len(raw) > max_bytes
+    raw_slice = raw[:max_bytes]
+    is_text = path.suffix.lower() in TEXT_FILE_SUFFIXES
+    data: dict[str, Any] = {
+        "path": workspace_relative(path),
+        "size": len(raw),
+        "truncated": truncated,
+        "encoding": "utf-8" if is_text else "base64",
+    }
+    if is_text:
+        data["content"] = raw_slice.decode("utf-8", errors="replace")
+    else:
+        data["content_base64"] = base64.b64encode(raw_slice).decode("ascii")
+    log_file = log_event("read_workspace_file", job_id, {"relative_path": relative_path, "bytes": len(raw_slice), "truncated": truncated})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=WORKSPACE_ROOT,
+        log_file=log_file,
+        message="Workspace file read.",
+        warnings=["File was truncated to max_bytes."] if truncated else [],
+        data=data,
+    )
+
+
+def tool_write_workspace_file(
+    relative_path: str,
+    content: str = "",
+    content_base64: str = "",
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    path = validate_workspace_path(relative_path, must_exist=False, allow_dir=False)
+    if path.exists() and not overwrite:
+        raise FileExistsError("File exists. Set overwrite=true to replace it.")
+    if content_base64:
+        raw = base64.b64decode(content_base64)
+    else:
+        raw = content.encode("utf-8")
+    if len(raw) > MAX_WRITE_BYTES:
+        raise ValueError(f"File content exceeds MAX_WRITE_BYTES={MAX_WRITE_BYTES}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    log_file = log_event("write_workspace_file", job_id, {"relative_path": relative_path, "bytes": len(raw)})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=path.parent,
+        log_file=log_file,
+        message="Workspace file written.",
+        data={"path": workspace_relative(path), "size": len(raw)},
+    )
+
+
+def tool_download_to_workspace(url: str, relative_path: str, overwrite: bool = False, max_bytes: int = MAX_DOWNLOAD_BYTES) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    safe_url = validate_download_url(url)
+    path = validate_workspace_path(relative_path, must_exist=False, allow_dir=False)
+    if path.exists() and not overwrite:
+        raise FileExistsError("File exists. Set overwrite=true to replace it.")
+    max_bytes = max(1, min(int(max_bytes), MAX_DOWNLOAD_BYTES))
+    request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    total = 0
+    with urlopen(request, timeout=60) as response, path.open("wb") as handle:
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                handle.close()
+                path.unlink(missing_ok=True)
+                raise ValueError(f"Download exceeds max_bytes={max_bytes}")
+            handle.write(chunk)
+    log_file = log_event("download_to_workspace", job_id, {"url": safe_url, "relative_path": relative_path, "bytes": total})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=path.parent,
+        log_file=log_file,
+        message="Downloaded file into workspace.",
+        data={"path": workspace_relative(path), "size": total},
+    )
+
+
+def tool_run_workspace_python(
+    project_id: str,
+    script_path: str,
+    args: list[str] | None = None,
+    timeout_seconds: int = 120,
+) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=True)
+    job_id = uuid.uuid4().hex
+    script = validate_code_path(script_path, must_exist=True)
+    violations = scan_code_for_sandbox_violations(script)
+    if violations:
+        log_file = log_event("run_workspace_python", job_id, {"project_id": project_id, "status": "blocked", "violations": violations})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Script blocked by sandbox safety scan.",
+            warnings=violations,
+        )
+    safe_args = [str(arg) for arg in (args or [])]
+    if any(Path(arg).is_absolute() or ".." in Path(arg).parts for arg in safe_args):
+        raise ValueError("Script args must not contain absolute paths or parent-directory traversal")
+    timeout_seconds = max(1, min(int(timeout_seconds), MAX_RUN_TIMEOUT_SECONDS))
+    guard_dir = write_python_sandbox_guard()
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(guard_dir) if not existing_pythonpath else str(guard_dir) + os.pathsep + existing_pythonpath
+    env["SCMECHANISM_WORKSPACE"] = str(WORKSPACE_ROOT)
+    env["SCMECHANISM_INPUTS"] = str(INPUTS_DIR)
+    env["SCMECHANISM_OUTPUTS"] = str(OUTPUTS_DIR)
+    env["SCMECHANISM_PROJECT_DIR"] = str(project_dir)
+    env["SCMECHANISM_LOGS"] = str(LOGS_DIR)
+    env["PYTHONIOENCODING"] = "utf-8"
+    completed = subprocess.run(
+        [sys.executable, str(script), *safe_args],
+        cwd=WORKSPACE_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=timeout_seconds,
+        shell=False,
+    )
+    run_log = project_dir / "logs" / f"run_workspace_python-{job_id}.log"
+    run_log.parent.mkdir(parents=True, exist_ok=True)
+    run_log.write_text(
+        json.dumps(
+            {
+                "time": utc_now(),
+                "script": workspace_relative(script),
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-10000:],
+                "stderr": completed.stderr[-10000:],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    log_file = log_event("run_workspace_python", job_id, {"project_id": project_id, "status": "ok" if completed.returncode == 0 else "error", "returncode": completed.returncode})
+    return response_payload(
+        status="ok" if completed.returncode == 0 else "error",
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Workspace Python script completed." if completed.returncode == 0 else "Workspace Python script failed.",
+        warnings=[] if completed.returncode == 0 else ["See stdout/stderr in data and project log."],
+        data={
+            "script": workspace_relative(script),
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-10000:],
+            "stderr": completed.stderr[-10000:],
+            "run_log": workspace_relative(run_log),
+        },
+    )
+
+
+def workspace_resource_uri(path: Path) -> str:
+    return "sandbox://workspace/" + workspace_relative(path)
+
+
+def path_from_workspace_resource_uri(uri: str) -> Path:
+    prefix = "sandbox://workspace/"
+    if not uri.startswith(prefix):
+        raise ValueError("Only sandbox://workspace/ resource URIs are supported")
+    return validate_workspace_path(uri[len(prefix):], must_exist=True, allow_dir=False)
+
+
+def list_workspace_resources(max_files: int = 200) -> list[dict[str, Any]]:
+    resources = []
+    for path in sorted(WORKSPACE_ROOT.rglob("*")):
+        if not path.is_file():
+            continue
+        if is_relative_to(path, RUNTIME_DIR):
+            continue
+        stat = path.stat()
+        mime_type = mimetypes.guess_type(path.name)[0] or ("text/plain" if path.suffix.lower() in TEXT_FILE_SUFFIXES else "application/octet-stream")
+        resources.append({
+            "uri": workspace_resource_uri(path),
+            "name": workspace_relative(path),
+            "mimeType": mime_type,
+            "size": stat.st_size,
+        })
+        if len(resources) >= max_files:
+            break
+    return resources
+
+
+def read_workspace_resource(uri: str, max_bytes: int = MAX_READ_BYTES) -> dict[str, Any]:
+    path = path_from_workspace_resource_uri(uri)
+    max_bytes = max(1, min(int(max_bytes), MAX_READ_BYTES))
+    raw = path.read_bytes()
+    truncated = len(raw) > max_bytes
+    raw_slice = raw[:max_bytes]
+    mime_type = mimetypes.guess_type(path.name)[0] or ("text/plain" if path.suffix.lower() in TEXT_FILE_SUFFIXES else "application/octet-stream")
+    content: dict[str, Any] = {"uri": uri, "mimeType": mime_type}
+    if path.suffix.lower() in TEXT_FILE_SUFFIXES:
+        content["text"] = raw_slice.decode("utf-8", errors="replace")
+    else:
+        content["blob"] = base64.b64encode(raw_slice).decode("ascii")
+    return {"contents": [content], "truncated": truncated, "size": len(raw)}
+
+
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "ping": tool_ping,
     "list_available_pipelines": tool_list_available_pipelines,
@@ -386,6 +854,11 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "read_report": tool_read_report,
     "run_scanpy_basic": tool_run_scanpy_basic,
     "run_seurat_basic": tool_run_seurat_basic,
+    "list_workspace_files": tool_list_workspace_files,
+    "read_workspace_file": tool_read_workspace_file,
+    "write_workspace_file": tool_write_workspace_file,
+    "download_to_workspace": tool_download_to_workspace,
+    "run_workspace_python": tool_run_workspace_python,
 }
 
 
@@ -398,6 +871,11 @@ TOOL_SCHEMAS = [
     {"name": "read_report", "description": "Read report_skeleton.md from one project.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "run_scanpy_basic", "description": "Guarded placeholder for Scanpy execution.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}}, "required": ["project_id", "input_path"]}},
     {"name": "run_seurat_basic", "description": "Guarded placeholder for Seurat execution.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}}, "required": ["project_id", "input_path"]}},
+    {"name": "list_workspace_files", "description": "List files under the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 200}}}},
+    {"name": "read_workspace_file", "description": "Read a text or base64-encoded file from the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
+    {"name": "write_workspace_file", "description": "Write text or base64 content into the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string", "default": ""}, "content_base64": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}}, "required": ["relative_path"]}},
+    {"name": "download_to_workspace", "description": "Download an http/https file into the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "relative_path": {"type": "string"}, "overwrite": {"type": "boolean", "default": False}, "max_bytes": {"type": "integer", "default": MAX_DOWNLOAD_BYTES}}, "required": ["url", "relative_path"]}},
+    {"name": "run_workspace_python", "description": "Run a Python script located under workspace/code with workspace-only file access guards.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "script_path": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": "integer", "default": 120}}, "required": ["project_id", "script_path"]}},
 ]
 
 
@@ -424,6 +902,8 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
 
 class LocalMCPHandler(BaseHTTPRequestHandler):
     server_version = "scMechanismLocalMCP/0.1"
+    HEALTH_PATHS = {"/health", "/health/"}
+    MCP_PATHS = {"/mcp", "/mcp/"}
 
     def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -450,10 +930,10 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/health":
+        if parsed.path in self.HEALTH_PATHS:
             self._send_json(tool_ping())
             return
-        if parsed.path == "/mcp":
+        if parsed.path in self.MCP_PATHS:
             query = parse_qs(parsed.query)
             if "tool" in query:
                 name = query["tool"][0]
@@ -480,7 +960,7 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/mcp":
+        if parsed.path not in self.MCP_PATHS:
             self._send_json({"status": "error", "message": "Not found"}, HTTPStatus.NOT_FOUND)
             return
         try:
@@ -496,13 +976,29 @@ class LocalMCPHandler(BaseHTTPRequestHandler):
             if method == "initialize":
                 result = {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
+                    "capabilities": {"tools": {}, "resources": {}},
                     "serverInfo": {"name": "scmechanism-local-mcp", "version": "0.1.0"},
                 }
                 self._send_json({"jsonrpc": "2.0", "id": req_id, "result": result})
                 return
             if method == "tools/list":
                 self._send_json({"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOL_SCHEMAS}})
+                return
+            if method == "resources/list":
+                max_files = int(params.get("max_files", 200)) if isinstance(params, dict) else 200
+                self._send_json({"jsonrpc": "2.0", "id": req_id, "result": {"resources": list_workspace_resources(max_files=max_files)}})
+                return
+            if method == "resources/read":
+                uri = params.get("uri") if isinstance(params, dict) else None
+                if not uri:
+                    self._send_json({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32602, "message": "resources/read requires params.uri"}})
+                    return
+                try:
+                    result = read_workspace_resource(uri, int(params.get("max_bytes", MAX_READ_BYTES)))
+                except Exception as exc:
+                    self._send_json({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": str(exc)}})
+                    return
+                self._send_json({"jsonrpc": "2.0", "id": req_id, "result": result})
                 return
             if method == "tools/call":
                 tool_name = params.get("name")
@@ -543,4 +1039,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

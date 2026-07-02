@@ -2,47 +2,64 @@
 
 ## 目标
 
-检查用户上传的结果是否足以支持分析解读。
+检查用户上传或本地运行产生的结果是否足以支持继续分析、解释和报告写作。
 
 ## 输入可能包括
 
 ```text
 metadata.csv
 cluster_markers.csv
+singleR_cluster_labels.csv
+annotation_evidence.tsv
 deg_results.csv
 celltype_proportion.csv
 enrichment_results.csv
 cellchat_results.csv
 pseudotime_results.csv
-umap.png
-dotplot.png
+umap.png / umap.pdf
+dotplot.png / dotplot.pdf
 ```
 
 ## 调用脚本
 
 ```bash
 python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md result_quality_check.md
+python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md analysis/run1/downstream_proposal.md
 ```
 
 ## 必须检查
 
-- 是否有分组信息。
-- 样本量和生物学重复是否足够。
-- 是否有批次信息。
+- 是否有 metadata、分组、样本、批次和 donor/replicate 信息。
 - QC 阈值是否过严或过松。
 - cluster 数量是否异常。
-- marker 是否符合细胞类型。
-- DE gene 数量是否异常。
-- 富集通路是否与疾病问题相关。
-- CellChat 是否被过度解释。
-- 拟时序是否有合理 root 和连续生物学过程。
+- marker 是否符合组织背景和细胞类型。
+- 自动注释是否有证据表和不确定性标记。
+- 是否存在明显过细、互相矛盾或单一标签覆盖所有细胞的问题。
+- DE gene 数量和方向是否异常。
+- 富集通路是否与疾病问题和细胞类型相关。
+- CellChat 是否建立在可信注释和足够细胞数之上。
+- 拟时序是否有合理 root、连续过程和输入细胞子集。
+
+## 细胞注释判定
+
+注释结果分为：
+
+```text
+可用于下游：有 marker 支持、自动注释一致、关键图可复核。
+需要人工复核：自动注释和 marker 不一致，或存在 Ambiguous/Unknown cluster。
+不能用于下游：缺 marker 表、缺注释证据、所有 cluster 被标成同一类型、或标签明显不符合组织背景。
+```
+
+当注释不能用于下游时，不得建议直接运行 CellChat 或拟时序。
 
 ## 输出格式
 
 ```text
-总体质量判断：可靠/基本可靠/需谨慎/不建议解读
+总体质量判断：可靠 / 基本可靠 / 需谨慎 / 不建议解释
+细胞注释状态：可用于下游 / 需要人工复核 / 不能用于下游
 主要支持点：
 主要风险：
 需要补充的结果：
+是否允许进入 CellChat/拟时序候选方案：
 是否适合写入论文：
 ```

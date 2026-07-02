@@ -56,10 +56,13 @@ pred_df$cluster <- rownames(pred_df)
 write.csv(pred_df, file.path(output_dir, "tables", "singleR_cluster_labels.csv"), row.names = FALSE)
 
 if (!is.null(clusters)) {
-  cluster_to_label <- setNames(pred$labels, rownames(pred))
+  pruned <- if (!is.null(pred$pruned.labels)) pred$pruned.labels else pred$labels
+  final_cluster_label <- ifelse(is.na(pruned) | !nzchar(pruned), paste0("Ambiguous_", pred$labels), pruned)
+  cluster_to_label <- setNames(final_cluster_label, rownames(pred))
   obj$singleR_label <- unname(cluster_to_label[as.character(clusters)])
 } else {
-  obj$singleR_label <- pred$labels
+  pruned <- if (!is.null(pred$pruned.labels)) pred$pruned.labels else pred$labels
+  obj$singleR_label <- ifelse(is.na(pruned) | !nzchar(pruned), paste0("Ambiguous_", pred$labels), pruned)
 }
 
 write.csv(
@@ -67,6 +70,53 @@ write.csv(
   file.path(output_dir, "tables", "singleR_cell_labels.csv"),
   row.names = FALSE
 )
+
+marker_rows <- NULL
+if (!is.null(clusters)) {
+  Idents(obj) <- as.factor(clusters)
+  marker_rows <- tryCatch(
+    FindAllMarkers(obj, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25),
+    error = function(e) NULL
+  )
+}
+
+if (!is.null(clusters)) {
+  cluster_ids <- rownames(pred)
+  top_markers <- vapply(cluster_ids, function(cl) {
+    if (is.null(marker_rows)) return("")
+    hits <- marker_rows[as.character(marker_rows$cluster) == as.character(cl), , drop = FALSE]
+    if (!nrow(hits)) return("")
+    hits <- hits[order(hits$avg_log2FC, decreasing = TRUE), , drop = FALSE]
+    paste(head(hits$gene, 10), collapse = ";")
+  }, character(1))
+  cell_counts <- as.integer(table(as.factor(clusters))[as.character(cluster_ids)])
+  pruned <- if (!is.null(pred$pruned.labels)) pred$pruned.labels else pred$labels
+  delta_next <- if ("delta.next" %in% colnames(pred_df)) pred_df$delta.next else NA_real_
+  confidence <- ifelse(is.na(pruned) | !nzchar(pruned), "low", ifelse(is.na(delta_next) | delta_next < 0.05, "medium", "high"))
+  final_label <- ifelse(confidence == "low", paste0("Ambiguous_", pred$labels), pruned)
+  evidence <- data.frame(
+    cluster = cluster_ids,
+    final_label = final_label,
+    coarse_label = pred$labels,
+    singleR_label = pred$labels,
+    singleR_pruned_label = pruned,
+    singleR_delta_next = delta_next,
+    top_markers = top_markers,
+    canonical_marker_support = "manual_review_required",
+    conflicting_markers = "",
+    cell_count = cell_counts,
+    confidence = confidence,
+    review_note = ifelse(confidence == "low", "SingleR pruning failed or label is weak; keep ambiguous until marker review.", "Review marker plots before downstream modules."),
+    stringsAsFactors = FALSE
+  )
+  write.table(
+    evidence,
+    file.path(output_dir, "tables", "annotation_evidence.tsv"),
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE
+  )
+}
 
 if ("umap" %in% names(obj@reductions)) {
   pdf(file.path(output_dir, "figures", "umap_singleR_labels.pdf"), width = 8, height = 6)

@@ -24,9 +24,11 @@ This skill is a decision and code-generation controller. It does not promise tha
 2. Diagnose GEO/SRA/local file formats and data readiness.
 3. Generate an analysis plan with risks and required metadata.
 4. Check or install the required R/Python environment before running Seurat V5 course-derived code.
-5. Select or render local runnable Seurat/Scanpy/CellChat/Monocle3 code.
-6. The user runs the code locally, in RStudio, Python, Colab, or an institutional server when tools are available.
-7. Skill checks result quality, removes known-bad rerun artifacts, writes logs, and writes cautious interpretation, Methods, Results, legends, limitations, and validation suggestions.
+5. Select or render local runnable Seurat/Scanpy/annotation/marker/enrichment code.
+6. Review cell annotation evidence and generate a downstream proposal before CellChat or Monocle3.
+7. Render or run CellChat/Monocle3 only after the user explicitly approves the proposed cell groups, microenvironment, lineage, and root choice.
+8. The user runs approved code locally, in RStudio, Python, Colab, or an institutional server when tools are available.
+9. Skill checks result quality, removes known-bad rerun artifacts, writes logs, and writes cautious interpretation, Methods, Results, legends, limitations, and validation suggestions.
 
 Do not claim:
 
@@ -46,9 +48,11 @@ Start every task by determining which of these modes applies:
 4. **Analysis planning**: use `agents/03_analysis_plan_generator.md` and optionally run `scripts/build_analysis_plan.py`.
 5. **Environment preparation**: before Seurat V5 course-derived execution, read `references/environment/requirements.md`, `references/environment/path-setup.md`, and run `scripts/env_setup/check_environment.ps1`; run `scripts/env_setup/install_environment.ps1` when tools or packages are missing.
 6. **Code generation**: use `agents/04_code_generator.md`; prefer `scripts/course_adapted/` for Seurat V5 workflows and render placeholders through `scripts/render_template.py`.
-7. **Result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
-8. **Biological interpretation/report**: use agents 06-08, then run `scripts/write_analysis_report.py` to generate a durable report from the actual result tables.
-9. **Platform submission check**: before packaging or contest submission, read `references/platform-submission-checklist.md`, update `examples/validation_input_output_comparison.md` with at least 5 validation cases, run `scripts/validate_platform_skill.py`, and build the upload zip with `scripts/package_platform_skill.py`.
+7. **Annotation and result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
+8. **Downstream proposal gate**: before CellChat or Monocle3, run `scripts/propose_downstream_modules.py`, present `downstream_proposal.md`, and wait for user approval.
+9. **Approved downstream execution**: only after approval, render `scripts/course_adapted/03_cellchat_from_seurat.R` or `scripts/course_adapted/04_monocle3_from_seurat.R` with the approved scope.
+10. **Biological interpretation/report**: use agents 06-08, then run `scripts/write_analysis_report.py` to generate a durable report from the actual result tables.
+11. **Platform submission check**: before packaging or contest submission, read `references/platform-submission-checklist.md`, update `examples/validation_input_output_comparison.md` with at least 5 validation cases, run `scripts/validate_platform_skill.py`, and build the upload zip with `scripts/package_platform_skill.py`.
 
 ## Script Layout
 
@@ -70,6 +74,7 @@ python scripts/diagnose_geo_inputs.py --file-list supplementary_files.txt --out-
 python scripts/build_analysis_plan.py --diagnosis-json diagnosis.json --question "disease mechanism" --organism human --comparison "disease vs control" --out-md analysis_plan.md
 python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5_core_pipeline.R --out run/01_seurat_v5_core_pipeline.R --define INPUT_PATH=/path/to/data --define OUTPUT_DIR=analysis/run1
 python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md result_quality_check.md
+python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md analysis/run1/downstream_proposal.md
 python scripts/build_codebase_summary.py --course-root scripts/course_source --out CODEBASE_SUMMARY.md
 python scripts/write_analysis_report.py --result-dir analysis/run1 --metadata-json analysis/run1/report_metadata.json --out-md analysis/run1/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/run1 --out-md analysis/run1/full_workflow_validation.md
@@ -100,6 +105,8 @@ templates/scanpy_batch_annotation_enrichment_template.py
 The Python scripts do not replace the course code. Heavy Seurat V5 computation belongs in the adapted R scripts, which trace back to the English-named course reference scripts in `scripts/course_source/` and the mapping table `scripts/course_source/source_manifest.csv`.
 
 Use `scripts/course_adapted/` for Seurat V5 course-derived modules. Use `templates/` for generic reusable templates, especially Scanpy workflows and Markdown report scaffolds. Render either family through `scripts/render_template.py` when placeholders need to be filled.
+
+`03_cellchat_from_seurat.R` and `04_monocle3_from_seurat.R` are approval-gated scripts. Do not render or run them until `downstream_proposal.md` has been reviewed and the user has explicitly approved the module and cell scope.
 
 ## References
 
@@ -160,6 +167,7 @@ The local Seurat V5 course archive is reorganized inside the skill at `scripts/c
 - Manual/SingleR/SCINA/TransferData/scPred/LLM-assisted annotation.
 - Marker detection, GO/KEGG enrichment, CellChat, Monocle2/3, copykat, inferCNV, hdWGCNA, CIBERSORT, and MuSiC.
 - Multi-sample merge/Harmony and SingleR annotation are exposed as adapted modules, not hidden assumptions in the core pipeline.
+- CellChat and Monocle3 are not automatic next steps; they require annotation review and a user-approved downstream proposal.
 
 Adaptation rules:
 
@@ -176,6 +184,8 @@ A good answer or generated artifact should include:
 - Input diagnosis and data readiness.
 - Missing metadata/questions.
 - Analysis plan with module rationale.
+- Cell annotation evidence and uncertainty status before downstream interpretation.
+- A downstream module proposal and user approval record before CellChat or pseudotime execution.
 - Local runnable code or script names.
 - Expected output files.
 - Quality-control and interpretation limits.

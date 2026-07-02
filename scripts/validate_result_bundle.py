@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import Counter
 from pathlib import Path
 
 
 EXPECTED = {
     "metadata": ["metadata", "meta"],
     "markers": ["marker", "findallmarkers"],
+    "annotation": ["annotation_evidence", "singler", "celltypist", "cell_labels"],
     "deg": ["deg", "differential"],
     "enrichment": ["enrich", "kegg", "go_"],
     "cellchat": ["cellchat", "communication", "ligand", "receptor"],
@@ -19,17 +21,65 @@ EXPECTED = {
 }
 
 
-def has_columns(path: Path, columns: list[str]) -> bool:
+def sniff_rows(path: Path, limit: int = 5000) -> tuple[list[str], list[dict[str, str]]]:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             sample = handle.read(4096)
             handle.seek(0)
             dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
             reader = csv.DictReader(handle, dialect=dialect)
-            header = [x.lower() for x in (reader.fieldnames or [])]
-            return any(col in header for col in columns)
+            header = [x or "" for x in (reader.fieldnames or [])]
+            rows = []
+            for i, row in enumerate(reader):
+                if i >= limit:
+                    break
+                rows.append({(k or "").strip(): (v or "").strip() for k, v in row.items()})
+            return header, rows
     except Exception:
-        return False
+        return [], []
+
+
+def has_columns(path: Path, columns: list[str]) -> bool:
+    header, _ = sniff_rows(path, limit=1)
+    lower = [x.lower() for x in header]
+    return any(col in lower for col in columns)
+
+
+def annotation_status(annotation_files: list[Path], marker_files: list[Path]) -> tuple[str, list[str], list[str]]:
+    risks: list[str] = []
+    support: list[str] = []
+    if not marker_files:
+        risks.append("No marker table detected; annotation cannot be reviewed against marker evidence.")
+    if not annotation_files:
+        risks.append("No annotation evidence or automatic label table detected.")
+        return "not_usable", support, risks
+
+    evidence = [p for p in annotation_files if "annotation_evidence" in p.name.lower()]
+    if evidence:
+        labels: Counter[str] = Counter()
+        low_confidence = 0
+        for path in evidence:
+            _, rows = sniff_rows(path)
+            for row in rows:
+                label = row.get("final_label") or row.get("coarse_label") or row.get("singleR_label") or ""
+                if label:
+                    labels[label] += 1
+                if (row.get("confidence") or "").lower() == "low":
+                    low_confidence += 1
+        if labels:
+            support.append(f"Annotation evidence detected with {len(labels)} unique labels.")
+        if len(labels) <= 1:
+            risks.append("Only one annotation label detected; verify that the dataset is truly single-lineage.")
+        if low_confidence:
+            risks.append(f"{low_confidence} low-confidence annotation entries require manual review.")
+        if marker_files and len(labels) > 1 and not low_confidence:
+            return "usable", support, risks
+        return "needs_review", support, risks
+
+    risks.append("Automatic annotation table detected, but annotation_evidence.tsv is missing.")
+    if marker_files:
+        return "needs_review", support, risks
+    return "not_usable", support, risks
 
 
 def main() -> None:
@@ -42,39 +92,75 @@ def main() -> None:
     files = [p for p in root.rglob("*") if p.is_file()]
     lower = {p: p.name.lower() for p in files}
     found = {
-        key: [str(p) for p, name in lower.items() if any(token in name for token in tokens)]
+        key: [p for p, name in lower.items() if any(token in name for token in tokens)]
         for key, tokens in EXPECTED.items()
     }
 
-    risks = []
-    metadata_files = [Path(x) for x in found["metadata"]]
+    risks: list[str] = []
+    support: list[str] = []
+    metadata_files = found["metadata"]
     if not metadata_files:
         risks.append("No metadata table detected; group/batch/sample-level interpretation is limited.")
     elif not any(has_columns(p, ["sample_id", "sample", "condition", "group", "batch", "donor_id"]) for p in metadata_files):
         risks.append("Metadata exists but common sample/group/batch columns were not detected.")
+    else:
+        support.append("Metadata with common sample/group/batch columns was detected.")
+
     if not found["markers"]:
         risks.append("No marker table detected; annotation quality cannot be checked.")
-    if found["cellchat"] and not found["markers"]:
-        risks.append("CellChat results without marker/annotation evidence are prone to over-interpretation.")
+    else:
+        support.append(f"Marker-related files detected: {len(found['markers'])}.")
+
+    ann_status, ann_support, ann_risks = annotation_status(found["annotation"], found["markers"])
+    support.extend(ann_support)
+    risks.extend(ann_risks)
+
+    if found["cellchat"] and ann_status == "not_usable":
+        risks.append("CellChat results exist but annotation is not usable; do not interpret communication results yet.")
+    if found["pseudotime"] and ann_status == "not_usable":
+        risks.append("Pseudotime results exist but annotation is not usable; root/subset choices require review.")
     if found["pseudotime"] and not found["umap"]:
         risks.append("Pseudotime results should be reviewed with embedding/trajectory plots.")
 
-    quality = "基本可靠" if not risks else "需谨慎"
     if not files:
-        quality = "不建议解读"
+        quality = "not_interpretable"
         risks.append("No files found in result directory.")
+    elif ann_status == "not_usable" or len(risks) >= 4:
+        quality = "caution_required"
+    elif risks:
+        quality = "basically_reliable_with_review"
+    else:
+        quality = "reliable_for_exploratory_reporting"
 
-    lines = ["# Result Quality Check", "", f"总体质量判断：{quality}", ""]
-    lines.append("## Detected Files")
+    downstream_allowed = ann_status in {"usable", "needs_review"}
+
+    lines = [
+        "# Result Quality Check",
+        "",
+        f"- Overall quality: {quality}",
+        f"- Cell annotation status: {ann_status}",
+        f"- Allow CellChat/pseudotime proposal: {'yes' if downstream_allowed else 'no'}",
+        "",
+        "## Detected Files",
+    ]
     for key, paths in found.items():
         lines.append(f"- {key}: {len(paths)}")
-    lines.append("")
-    lines.append("## 主要风险")
-    lines.extend(f"- {x}" for x in risks) if risks else lines.append("- 未发现明显结构性缺失；仍需人工复核生物学合理性。")
-    lines.append("")
-    lines.append("## 是否适合写入论文")
-    lines.append("需要同时具备 metadata、QC、annotation evidence、statistical method 和可追溯图表后，才建议写入正式论文结果。")
-    Path(args.out_md).write_text("\n".join(lines), encoding="utf-8")
+
+    lines.extend(["", "## Main Support"])
+    lines.extend(f"- {x}" for x in support) if support else lines.append("- No strong structural support detected yet.")
+
+    lines.extend(["", "## Main Risks"])
+    lines.extend(f"- {x}" for x in risks) if risks else lines.append("- No obvious structural blocker detected; biological review is still required.")
+
+    lines.extend([
+        "",
+        "## Next Step",
+        "Before running CellChat or pseudotime, generate `downstream_proposal.md` and ask the user to approve the module and scope.",
+        "",
+        "## Manuscript Suitability",
+        "Use in manuscript text only after metadata, QC, annotation evidence, statistical method, and traceable figures/tables are available.",
+    ])
+    Path(args.out_md).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

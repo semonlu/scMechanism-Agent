@@ -30,8 +30,9 @@ Clinical researchers often find public scRNA-seq datasets in GEO but cannot easi
 - Parse clinical research questions into analyzable single-cell tasks.
 - Diagnose GEO supplementary file lists and local file formats.
 - Generate analysis plans for processed matrices, 10x data, h5ad/RDS objects, and FASTQ/SRA.
-- Render or copy Seurat, Scanpy, CellChat, and Monocle3 code.
-- Check result folders for metadata, marker, DE, enrichment, CellChat, pseudotime, and figure evidence.
+- Render or copy Seurat, Scanpy, annotation, marker, and enrichment code.
+- Generate CellChat and Monocle3 code only after annotation review and user-approved downstream scope.
+- Check result folders for metadata, marker, annotation evidence, DE, enrichment, CellChat, pseudotime, and figure evidence.
 - Draft Methods, Results, figure legends, limitations, and validation suggestions.
 
 ## Not Promised
@@ -75,6 +76,7 @@ python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5
 python scripts/render_template.py --template scripts/course_adapted/05_singler_cell_annotation.R --out run/05_singler_cell_annotation.R --define INPUT_RDS=analysis/GSE/objects/processed_seurat.rds --define OUTPUT_DIR=analysis/GSE/singler
 python scripts/render_template.py --template templates/scanpy_batch_annotation_enrichment_template.py --out run/scanpy_optional_modules.py --define INPUT_H5AD=analysis/GSE/objects/processed.h5ad --define OUTPUT_DIR=analysis/GSE/scanpy_optional
 python scripts/validate_result_bundle.py --result-dir analysis/GSE --out-md result_quality_check.md
+python scripts/propose_downstream_modules.py --result-dir analysis/GSE --out-md analysis/GSE/downstream_proposal.md
 python scripts/write_analysis_report.py --result-dir analysis/GSE --metadata-json analysis/GSE/report_metadata.json --out-md analysis/GSE/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/GSE --out-md analysis/GSE/full_workflow_validation.md
 python scripts/validate_platform_skill.py --skill-root .
@@ -113,6 +115,8 @@ The Seurat V5 course archive was reorganized into English filenames under `scrip
 The adapted scripts are parameterized and do not preserve interactive working-directory selection, fixed object names, Chinese output names, or example-specific thresholds. The source reference scripts also have English filenames and a header describing their original source.
 
 `templates/` is for generic reusable templates and lightweight platform demonstrations. `scripts/course_adapted/` is for course-traced runnable Seurat modules. When both are possible, prefer `scripts/course_adapted/` for Seurat V5 course-derived work and `templates/` for Scanpy/report scaffolds.
+
+CellChat and Monocle3 are approval-gated. First run annotation review and generate `downstream_proposal.md`; then ask the user to approve the cell groups, microenvironment, lineage, and root choice before rendering or running those scripts.
 
 ## Workflow Layering
 

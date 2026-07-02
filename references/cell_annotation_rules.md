@@ -1,6 +1,33 @@
 # Cell Annotation Rules
 
-Marker annotation must combine canonical markers, tissue context, organism, and cluster-level expression patterns. Automated tools are supporting evidence, not final authority.
+Cell annotation must combine canonical markers, tissue context, organism, cluster-level expression patterns, and automated reference labels. Automated labels are supporting evidence, not final authority.
+
+## Minimum Evidence
+
+Every completed annotation should export an evidence table equivalent to `annotation_evidence.tsv` with:
+
+```text
+cluster
+final_label
+coarse_label
+singleR_label
+singleR_pruned_label
+singleR_delta_next
+top_markers
+canonical_marker_support
+conflicting_markers
+cell_count
+confidence
+review_note
+```
+
+Confidence should use:
+
+- `high`: marker evidence and reference label agree.
+- `medium`: broad lineage is clear but subtype is uncertain.
+- `low`: marker evidence is weak, conflicting, or reference label is missing.
+
+Clusters with low confidence must keep `Unknown`, `Ambiguous`, or a coarse lineage label. Do not force fine subtype labels.
 
 ## Common Markers
 
@@ -20,15 +47,16 @@ Marker annotation must combine canonical markers, tissue context, organism, and 
 | Smooth muscle/pericytes | ACTA2, RGS5, PDGFRB |
 | Mast cells | TPSAB1, CPA3 |
 
-## Expected Evidence
+## Review Rules
 
-- DotPlot/FeaturePlot for marker genes.
-- Top marker table per cluster.
-- Automated labels from SingleR/SCINA/TransferData/scPred/CellTypist when appropriate.
-- `annotation_evidence.tsv` with label, marker support, automated support, and uncertainty.
+- If all clusters receive the same label, treat annotation as failed until marker plots prove that the dataset truly contains one lineage.
+- If SingleR/CellTypist label conflicts with top markers, prefer marker evidence and mark the cluster for review.
+- If a cluster has mixed lineage markers, mark `Ambiguous` and consider doublet, low-quality cells, or over-clustering.
+- If the study tissue lacks a claimed cell type biologically, mark the label as suspicious and require manual review.
+- LLM-assisted annotation may use marker summaries only. Do not send raw expression matrices or private metadata to external APIs.
 
-## Guardrails
+## Downstream Gate
 
-- Do not force precise subtype labels when evidence is weak.
-- Do not upload raw matrices to external LLM/API annotation services without explicit approval.
-- Prefer marker summaries over expression matrices for LLM-assisted annotation.
+CellChat, pseudotime, CNV, deconvolution, and microenvironment interpretation require annotation status of `usable` or `needs_review_with_approved_scope`.
+
+If annotation status is `not_usable`, the skill must stop and ask for corrected annotation or manual confirmation before generating downstream scripts.

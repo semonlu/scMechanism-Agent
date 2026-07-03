@@ -14,6 +14,8 @@ tables/annotation_evidence.tsv
 objects/processed_seurat.rds or objects/processed.h5ad
 logs/session_info.txt
 logs/commands.txt
+data_input_manifest.json
+data_analysis_qc.md
 ```
 
 ## Optional Module Outputs
@@ -34,6 +36,7 @@ figures/enrichment_dotplot.pdf
 ## Review Questions
 
 - Are sample-level metadata and group labels present?
+- Does `data_analysis_qc.md` confirm that the analyzed `input_path` matches the planned/downloaded/extracted/registered dataset?
 - Are raw counts retained?
 - Are QC thresholds justified?
 - Are batch effects assessed?

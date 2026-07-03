@@ -105,6 +105,23 @@ The Python scripts do not replace the course code. Heavy Seurat V5 computation b
 
 Use `scripts/course_adapted/` for Seurat V5 course-derived modules. Use `templates/` for generic reusable templates, especially Scanpy workflows and Markdown report scaffolds. Render either family through `scripts/render_template.py` when placeholders need to be filled.
 
+## Required Seurat V5 Course Order
+
+For Seurat V5 course-derived scRNA-seq workflows, do not jump directly from import to annotation or downstream interpretation. The analysis plan and generated code must preserve this order and cite the corresponding course-derived module:
+
+1. Input diagnosis and object construction: `05_read_10x_standard.R`, `08_read_10x_h5.R`, or mixed-input logic from `09_merge_mixed_inputs.R` -> `scripts/course_adapted/01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+2. Single-cell QC and filtering: `10_quality_control.R` -> `references/singlecell_qc_rules.md` and `01_seurat_v5_core_pipeline.R`.
+3. First normalization, variable features, scaling, PCA, and optional Harmony: `11_normalization_decontx_harmony.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+4. Doublet detection: `12_doublet_finder.R` or `13_scdblfinder.R`; propose it when raw counts and per-sample/loading-batch metadata support it, otherwise explain why it is skipped.
+5. Doublet removal: remove predicted doublets per sample/loading batch, without hard-coding DoubletFinder classification column names.
+6. Post-doublet re-normalization and reprocessing: `14_post_doublet_normalization.R`; rerun normalization, variable features, scaling, PCA, neighbors, clustering, and UMAP on retained cells.
+7. Clustering and resolution review: `15_clustering_resolution.R` -> `01_seurat_v5_core_pipeline.R`; review cluster stability and marker support.
+8. Marker detection: `23_marker_detection_methods.R` -> `01_seurat_v5_core_pipeline.R` and `02_marker_enrichment_from_seurat.R`.
+9. Cell annotation after clustering and marker review: `16_manual_cell_annotation.R`, `17_singler_annotation.R`, `18_scina_annotation.R`, `21_transferdata_annotation.R`, `22_scpred_annotation.R` -> `05_singler_cell_annotation.R` plus manual marker evidence.
+10. Downstream proposal gate: only after annotation evidence is reviewed, propose CellChat, Monocle3/pseudotime, CNV, enrichment, or deconvolution scope and wait for user approval before rendering or running those modules.
+
+If doublet detection is skipped, the report must state the reason. If doublets are removed, all later clustering, annotation, CellChat, and pseudotime steps must use the post-doublet reprocessed object.
+
 `03_cellchat_from_seurat.R` and `04_monocle3_from_seurat.R` are approval-gated scripts. Do not render or run them until `downstream_proposal.md` has been reviewed and the user has explicitly approved the module and cell scope.
 
 ## References

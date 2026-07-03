@@ -2,7 +2,7 @@
 
 ## 目标
 
-根据数据格式、分析计划、用户确认状态和已有结果，选择本地可运行脚本。Seurat V5 相关流程优先使用 `scripts/course_adapted/` 中的课程改造 R 脚本；只有需要替换占位符时才调用 `scripts/render_template.py`。
+根据数据格式、分析计划、使用者确认状态和已有结果，选择本地可运行脚本。Seurat V5 相关流程优先使用 `scripts/course_adapted/` 中的课程改造 R 脚本；只有需要替换占位符时才调用 `scripts/render_template.py`。
 
 ## 可直接生成的脚本
 
@@ -15,6 +15,46 @@ Scanpy Python: templates/scanpy_basic_pipeline_template.py
 Scanpy 批次/注释/富集: templates/scanpy_batch_annotation_enrichment_template.py
 结果检查/报告: scripts/validate_result_bundle.py, scripts/write_analysis_report.py
 ```
+
+## Seurat V5 脚本顺序
+
+生成 Seurat V5 代码时，必须按课程流程顺序组织，不能把细胞注释放在 QC/标准化/去双/聚类之前：
+
+1. 数据导入和对象构建
+   课程代码: `05_read_10x_standard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R`
+   调用: `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`
+
+2. 单细胞 QC 和过滤
+   课程代码: `10_quality_control.R`
+   调用: `01_seurat_v5_core_pipeline.R` 和 `singlecell_qc_rules.md`
+
+3. 第一次标准化、PCA、Harmony/批次处理
+   课程代码: `11_normalization_decontx_harmony.R`
+   调用: `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`
+
+4. 双细胞检测
+   课程代码: `12_doublet_finder.R` 或 `13_scdblfinder.R`
+   规则: raw counts 和 sample/loading batch 信息足够时要加入；跳过时必须说明原因。
+
+5. 去除双细胞
+   课程代码: `12_doublet_finder.R` 或 `13_scdblfinder.R`
+   规则: 按样本/批次移除 predicted doublets，不硬编码 DoubletFinder 分类列名。
+
+6. 双细胞后标准化/重新处理
+   课程代码: `14_post_doublet_normalization.R`
+   规则: 去除双细胞后必须重新 NormalizeData、FindVariableFeatures、ScaleData、PCA、neighbors、clusters、UMAP。
+
+7. 单细胞分群聚类和分辨率检查
+   课程代码: `15_clustering_resolution.R`
+   调用: `01_seurat_v5_core_pipeline.R`
+
+8. Marker 检测
+   课程代码: `23_marker_detection_methods.R`
+   调用: `01_seurat_v5_core_pipeline.R` 和 `02_marker_enrichment_from_seurat.R`
+
+9. 细胞注释
+   课程代码: `16_manual_cell_annotation.R`, `17_singler_annotation.R`, `18_scina_annotation.R`, `21_transferdata_annotation.R`, `22_scpred_annotation.R`
+   调用: `05_singler_cell_annotation.R` 加人工 marker 复核。
 
 ## 需要确认后才能生成的脚本
 
@@ -46,12 +86,14 @@ Monocle3 R: scripts/course_adapted/04_monocle3_from_seurat.R
 
 1. 多个样本或多个 GSM 文件优先生成 `00_multi_sample_merge_harmony.R`，保留 `sample_id`、`batch`、`condition`。
 2. Seurat V5 路线优先选择 `scripts/course_adapted/`。
-3. Python/h5ad/Scanpy 先用 `scanpy_basic_pipeline_template.py`，再按需求追加批次、注释、富集模板。
-4. 同时有 h5ad 和 RDS 时，先询问首选生态；没有偏好时按 raw counts 完整度和已有注释选择。
-5. FASTQ/SRA 先生成矩阵重建方案，不生成 Seurat/Scanpy 下游代码。
-6. 输入是结果表时，转到结果质控、下游方案、解释和报告，不生成重跑代码。
-7. 空间转录组数据不能套用普通 scRNA-seq 模板；先要求平台、组织切片、坐标和图像信息。
-8. CellChat/Monocle3 必须先过“下游模块确认门”。没有用户确认时，不能生成运行命令。
+3. 如果输入和 metadata 支持双细胞检测，必须在计划中加入 DoubletFinder 或 scDblFinder，并说明去双细胞后要重新标准化/聚类。
+4. 如果跳过双细胞检测，必须写明原因，例如只有 processed object、细胞数过少、缺少 sample/loading batch 信息、包不可用。
+5. Python/h5ad/Scanpy 先用 `scanpy_basic_pipeline_template.py`，再按需求追加批次、注释、富集模板。
+6. 同时有 h5ad 和 RDS 时，先询问首选生态；没有偏好时按 raw counts 完整度和已有注释选择。
+7. FASTQ/SRA 先生成矩阵重建方案，不生成 Seurat/Scanpy 下游代码。
+8. 输入是结果表时，转到结果质控、下游方案、解释和报告，不生成重跑代码。
+9. 空间转录组数据不能套用普通 scRNA-seq 模板；先要求平台、组织切片、坐标和图像信息。
+10. CellChat/Monocle3 必须先过“下游模块确认门”。没有使用者确认时，不能生成运行命令。
 
 ## 输出要求
 

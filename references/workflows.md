@@ -14,6 +14,20 @@ This skill follows a GEO-to-Mechanism workflow inspired by separate planning, ex
 8. Interpret and report with agents 06-08 and `scripts/write_analysis_report.py`.
 9. Before publishing or uploading an example, run `scripts/validate_full_workflow.py` and fix every error.
 
+## Seurat V5 Ordered Course Flow
+
+When the selected route is Seurat V5 course-derived scRNA-seq analysis, use this sequence in the plan and code:
+
+1. Import/object construction: `05_read_10x_standard.R`, `08_read_10x_h5.R`, or `09_merge_mixed_inputs.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+2. Single-cell QC/filtering: `10_quality_control.R` -> `singlecell_qc_rules.md` and `01_seurat_v5_core_pipeline.R`.
+3. First normalization/PCA/Harmony: `11_normalization_decontx_harmony.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+4. Doublet detection/removal when applicable: `12_doublet_finder.R` or `13_scdblfinder.R`; document if skipped.
+5. Post-doublet normalization/reprocessing: `14_post_doublet_normalization.R`; rerun normalization, PCA, neighbors, UMAP, and clustering on retained cells.
+6. Clustering/resolution review: `15_clustering_resolution.R` -> `01_seurat_v5_core_pipeline.R`.
+7. Marker detection: `23_marker_detection_methods.R` -> `01_seurat_v5_core_pipeline.R` and `02_marker_enrichment_from_seurat.R`.
+8. Cell annotation: `16_manual_cell_annotation.R`, `17_singler_annotation.R`, `18_scina_annotation.R`, `21_transferdata_annotation.R`, `22_scpred_annotation.R` -> `05_singler_cell_annotation.R` plus manual marker review.
+9. Downstream proposal: only after annotation evidence is reviewed, propose CellChat, pseudotime, CNV, enrichment, or deconvolution scope and wait for user approval.
+
 ## Start Layer By Input Type
 
 - Clinical question only: parse and ask for missing dataset/design.

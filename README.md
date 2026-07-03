@@ -260,6 +260,22 @@ The main adapted modules include:
 
 The adapted scripts are parameterized and do not preserve interactive working-directory selection, fixed object names, Chinese output names, or example-specific thresholds.
 
+For Seurat V5 course-derived scRNA-seq workflows, the expected order is:
+
+```text
+1. Import/object construction
+2. Single-cell QC and filtering
+3. First normalization, PCA, and optional Harmony
+4. Doublet detection and removal when applicable
+5. Post-doublet re-normalization and reprocessing
+6. Clustering and resolution review
+7. Marker detection
+8. Cell annotation with SingleR and marker-supported manual review
+9. Downstream proposal and user approval before CellChat/Monocle3/CNV/deconvolution
+```
+
+The corresponding course-source mapping is documented in `SKILL.md`, `references/seurat_pipeline_rules.md`, `references/course-adaptation.md`, and `references/course-code-index.md`.
+
 ---
 
 ## Templates

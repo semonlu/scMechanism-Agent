@@ -11,6 +11,8 @@ These R scripts are the runnable, parameterized versions of the Seurat V5 course
 | `04_monocle3_from_seurat.R` | Monocle3 | Run trajectory and pseudotime analysis from a processed Seurat object. |
 | `05_singler_cell_annotation.R` | `17_singler_annotation.R` | Add SingleR cluster/cell labels to a processed Seurat object. |
 
+The expected Seurat V5 course order is: import/object construction -> QC -> first normalization/PCA/Harmony -> doublet detection/removal when applicable -> post-doublet re-normalization -> clustering/resolution review -> marker detection -> cell annotation -> downstream proposal and approval. Downstream CellChat or Monocle3 should use the annotated, post-doublet reprocessed object when doublets were removed.
+
 The Python scripts in the parent `scripts/` folder are helper controllers for GEO diagnosis, planning, template rendering, result checking, and codebase summaries. They do not replace these R analysis scripts.
 
 `templates/` contains generic reusable templates for non-course workflows or lightweight platform demonstrations. `scripts/course_adapted/` contains course-traced runnable modules and should be preferred for Seurat V5 course-derived analyses.

@@ -103,6 +103,33 @@ Invoke-RestMethod http://127.0.0.1:8765/mcp/
 
 Both `/mcp` and `/mcp/` are registered explicitly and return the same JSON response. The server does not rely on trailing-slash redirects for MCP access.
 
+## Platform Timeout Model
+
+Many Medical AI Skill platforms terminate one MCP HTTP request after about 120 seconds. Real single-cell jobs often take much longer, so long-running work is exposed as asynchronous `start_*` tools:
+
+```text
+start_geo_download / start_extract_workspace_archive / start_seurat_basic / start_scanpy_basic / start_cellchat / start_monocle3
+```
+
+Each `start_*` call returns quickly with:
+
+```text
+status: submitted
+job_id: <id>
+log_file: mcp_server/workspace/logs/jobs/<id>.log
+```
+
+The platform should then call:
+
+```text
+get_job_status(job_id="<id>")
+read_job_log(job_id="<id>")
+list_result_files(project_id="<project>")
+read_report(project_id="<project>")
+```
+
+Direct synchronous implementations still exist inside the backend for local developer diagnostics, but normal MCP discovery advertises the asynchronous versions so platform calls do not time out.
+
 Call a JSON-RPC MCP-style tool:
 
 ```powershell
@@ -154,7 +181,7 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
 ```
 
-Download selected real GEO supplementary files into the sandbox:
+Submit a real GEO supplementary-file download job into the sandbox:
 
 ```powershell
 $body = @{
@@ -162,7 +189,7 @@ $body = @{
   id = 3
   method = "tools/call"
   params = @{
-    name = "download_geo_supplementary"
+    name = "start_geo_download"
     arguments = @{
       project_id = "case01"
       gse_accession = "GSE176078"
@@ -175,7 +202,25 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
 ```
 
-After downloading, extract archives with `extract_workspace_archive` when needed, inspect files under `mcp_server/workspace/inputs/case01/GSE176078/`, then run `run_seurat_basic` or `run_scanpy_basic` with the real input path. Do not use `run_demo_pipeline` for real-data validation.
+The response returns immediately with a `job_id`. Poll the job until it finishes:
+
+```powershell
+$body = @{
+  jsonrpc = "2.0"
+  id = 4
+  method = "tools/call"
+  params = @{
+    name = "get_job_status"
+    arguments = @{
+      job_id = "<returned-job-id>"
+    }
+  }
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
+```
+
+After downloading, extract archives with `start_extract_workspace_archive` when needed, inspect files under `mcp_server/workspace/inputs/case01/GSE176078/`, then run `start_seurat_basic` or `start_scanpy_basic` with the real input path. Do not use `run_demo_pipeline` for real-data validation.
 
 ## Expose With Cloudflare Quick Tunnel
 
@@ -260,19 +305,21 @@ https://example-random.trycloudflare.com/health
 - `create_project(project_name: str)`
 - `list_result_files(project_id: str)`
 - `read_report(project_id: str)`
+- `get_job_status(job_id: str)`
+- `read_job_log(job_id: str, max_bytes: int = 1000000)`
 - `list_geo_supplementary_files(gse_accession: str, file_regex: str = "")`
-- `download_geo_supplementary(project_id: str, gse_accession: str, file_regex: str = "", max_files: int = 20, overwrite: bool = false, max_bytes_per_file: int = 2000000000)`
-- `extract_workspace_archive(archive_path: str, output_dir: str = "", overwrite: bool = false, max_members: int = 20000)`
+- `start_geo_download(project_id: str, gse_accession: str, file_regex: str = "", max_files: int = 20, overwrite: bool = false, max_bytes_per_file: int = 2000000000)`
+- `start_extract_workspace_archive(archive_path: str, output_dir: str = "", overwrite: bool = false, max_members: int = 20000, project_id: str = "archive_extract")`
 - `list_skill_runtime_files(relative_path: str = "", max_files: int = 300)`
 - `read_skill_runtime_file(relative_path: str, max_bytes: int = 1000000)`
 - `check_runtime_environment(project_id: str = "environment_check")`
 - `render_workflow_scripts(project_id: str, input_path: str, species: str = "human", input_type: str = "", metadata_path: str = "", sample_id: str = "", batch_col: str = "", condition_col: str = "", reference_name: str = "")`
-- `run_scanpy_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", batch_col: str = "", metadata_path: str = "", sample_id: str = "", group_col: str = "", annotation_method: str = "marker_summary", timeout_seconds: int = 3600)`
-- `run_seurat_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", metadata_path: str = "", sample_id: str = "", batch_col: str = "", condition_col: str = "", reference_name: str = "", run_annotation: bool = true, run_marker_enrichment: bool = true, timeout_seconds: int = 7200)`
+- `start_scanpy_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", batch_col: str = "", metadata_path: str = "", sample_id: str = "", group_col: str = "", annotation_method: str = "marker_summary", timeout_seconds: int = 3600)`
+- `start_seurat_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", metadata_path: str = "", sample_id: str = "", batch_col: str = "", condition_col: str = "", reference_name: str = "", run_annotation: bool = true, run_marker_enrichment: bool = true, timeout_seconds: int = 7200)`
 - `propose_downstream_modules(project_id: str)`
 - `validate_result_bundle(project_id: str)`
-- `run_cellchat(project_id: str, approval_token: str, celltype_col: str = "singleR_label", species: str = "human", min_cells: int = 10, timeout_seconds: int = 7200)`
-- `run_monocle3(project_id: str, approval_token: str, celltype_col: str = "singleR_label", subset_query: str = "", root_query: str = "", timeout_seconds: int = 7200)`
+- `start_cellchat(project_id: str, approval_token: str, celltype_col: str = "singleR_label", species: str = "human", min_cells: int = 10, timeout_seconds: int = 7200)`
+- `start_monocle3(project_id: str, approval_token: str, celltype_col: str = "singleR_label", subset_query: str = "", root_query: str = "", timeout_seconds: int = 7200)`
 - `list_workspace_files(relative_path: str = "", max_files: int = 200)`
 - `read_workspace_file(relative_path: str, max_bytes: int = 1000000)`
 - `write_workspace_file(relative_path: str, content: str = "", content_base64: str = "", overwrite: bool = false)`
@@ -288,9 +335,9 @@ run_full_workflow_selftest(project_id="mcp_selftest_full_modules", confirm_synth
 
 These tools create synthetic data and must not be used to claim that real GEO data were downloaded or analyzed.
 
-`run_scanpy_basic` now runs a guarded Scanpy workflow for `h5ad`, `10x_mtx`, or `10x_h5` inputs under `workspace/inputs/`. It uses the analysis Python detected by `SCMECHANISM_PYTHON` or the default `seuratv5-course-py` environment. If no metadata is supplied for a 10x folder, it creates default `sample_id`, `group`, and `batch` columns so downstream marker and review steps still have a stable grouping column. If metadata is supplied, pass `metadata_path` under `workspace/inputs/`; row names, `cell`, or `barcode` are matched to cell barcodes. It writes QC metrics, UMAP figures, marker tables, annotation-evidence tables, optional enrichment, logs, and a processed h5ad under `workspace/outputs/<project_id>/scanpy_basic/`.
+`start_scanpy_basic` submits a guarded Scanpy workflow for `h5ad`, `10x_mtx`, or `10x_h5` inputs under `workspace/inputs/`. It uses the analysis Python detected by `SCMECHANISM_PYTHON` or the default `seuratv5-course-py` environment. If no metadata is supplied for a 10x folder, it creates default `sample_id`, `group`, and `batch` columns so downstream marker and review steps still have a stable grouping column. If metadata is supplied, pass `metadata_path` under `workspace/inputs/`; row names, `cell`, or `barcode` are matched to cell barcodes. It writes QC metrics, UMAP figures, marker tables, annotation-evidence tables, optional enrichment, logs, and a processed h5ad under `workspace/outputs/<project_id>/scanpy_basic/`.
 
-`run_seurat_basic` now renders and runs the copied course-adapted Seurat V5 workflow on real input under `workspace/inputs/`. It supports `10x_mtx`, `10x_nonstandard`, `10x_h5`, `rds`, and `csv`:
+`start_seurat_basic` submits the copied course-adapted Seurat V5 workflow on real input under `workspace/inputs/`. It supports `10x_mtx`, `10x_nonstandard`, `10x_h5`, `rds`, and `csv`:
 
 1. `01_seurat_v5_core_pipeline.R`
 2. `05_singler_cell_annotation.R`
@@ -311,8 +358,8 @@ workspace/outputs/<project_id>/downstream_proposal.md
 The user should review the proposed microenvironment, target cell lineages, cell type column, root/state assumptions, and warnings. Only then call:
 
 ```text
-run_cellchat(..., approval_token="APPROVED_CELLCHAT")
-run_monocle3(..., approval_token="APPROVED_MONOCLE3")
+start_cellchat(..., approval_token="APPROVED_CELLCHAT")
+start_monocle3(..., approval_token="APPROVED_MONOCLE3")
 ```
 
 Without the matching approval token, both tools return `approval_required` and do not run.
@@ -336,12 +383,15 @@ check_runtime_environment(project_id="case01")
 
 ```text
 list_geo_supplementary_files(gse_accession="GSE176078")
-download_geo_supplementary(project_id="case01", gse_accession="GSE176078", file_regex="scRNASeq|RAW|matrix|h5ad|rds|tar")
-extract_workspace_archive(archive_path="case01/GSE176078/GSE176078_Wu_etal_2021_BRCA_scRNASeq.tar.gz", output_dir="case01/GSE176078/extracted")
-run_seurat_basic(project_id="case01", input_path="my_10x_folder", input_type="10x_mtx", species="human")
-run_seurat_basic(project_id="case01", input_path="case01/GSE176078/extracted_sample", input_type="10x_nonstandard", species="human")
-run_scanpy_basic(project_id="case01", input_path="processed.h5ad", input_type="h5ad", species="human")
-run_scanpy_basic(project_id="case02", input_path="sample_10x", input_type="10x_mtx", species="human", sample_id="sample_10x")
+start_geo_download(project_id="case01", gse_accession="GSE176078", file_regex="scRNASeq|RAW|matrix|h5ad|rds|tar")
+get_job_status(job_id="<download-job-id>")
+read_job_log(job_id="<download-job-id>")
+start_extract_workspace_archive(archive_path="case01/GSE176078/GSE176078_Wu_etal_2021_BRCA_scRNASeq.tar.gz", output_dir="case01/GSE176078/extracted", project_id="case01")
+get_job_status(job_id="<extract-job-id>")
+start_seurat_basic(project_id="case01", input_path="my_10x_folder", input_type="10x_mtx", species="human")
+start_seurat_basic(project_id="case01", input_path="case01/GSE176078/extracted_sample", input_type="10x_nonstandard", species="human")
+start_scanpy_basic(project_id="case01", input_path="processed.h5ad", input_type="h5ad", species="human")
+start_scanpy_basic(project_id="case02", input_path="sample_10x", input_type="10x_mtx", species="human", sample_id="sample_10x")
 ```
 
 5. Read `downstream_proposal.md`.

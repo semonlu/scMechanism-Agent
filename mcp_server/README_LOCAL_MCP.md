@@ -129,6 +129,15 @@ read_report(project_id="<project>")
 
 Direct synchronous implementations still exist inside the backend for local developer diagnostics, but normal MCP discovery advertises the asynchronous versions so platform calls do not time out.
 
+For any real analysis, also keep the data input synchronized:
+
+```text
+GEO data: start_geo_download -> start_extract_workspace_archive_if_needed -> validate_data_analysis_qc
+Manual/platform input: register_input_dataset -> validate_data_analysis_qc
+```
+
+The backend writes `data_input_manifest.json` and `data_analysis_qc.md` under `workspace/outputs/<project_id>/`.
+
 Call a JSON-RPC MCP-style tool:
 
 ```powershell
@@ -304,6 +313,8 @@ https://example-random.trycloudflare.com/health
 - `create_project(project_name: str)`
 - `list_result_files(project_id: str)`
 - `read_report(project_id: str)`
+- `register_input_dataset(project_id: str, input_path: str, input_type: str = "", source_label: str = "", metadata_path: str = "")`
+- `validate_data_analysis_qc(project_id: str, input_path: str, input_type: str = "", metadata_path: str = "", module: str = "analysis")`
 - `get_job_status(job_id: str)`
 - `read_job_log(job_id: str, max_bytes: int = 1000000)`
 - `list_geo_supplementary_files(gse_accession: str, file_regex: str = "")`
@@ -336,6 +347,8 @@ https://example-random.trycloudflare.com/health
 5. `propose_downstream_modules.py`
 
 It does not automatically run CellChat or Monocle3.
+
+Before analysis starts, `start_seurat_basic` and `start_scanpy_basic` write `data_analysis_qc.md`. If a project manifest exists and the requested `input_path` does not match the downloaded/extracted/registered input, the job stops before running biological analysis.
 
 ## Required Downstream Approval Gate
 
@@ -378,7 +391,7 @@ get_job_status(job_id="<download-job-id>")
 read_job_log(job_id="<download-job-id>")
 start_extract_workspace_archive(archive_path="case01/GSE176078/GSE176078_Wu_etal_2021_BRCA_scRNASeq.tar.gz", output_dir="case01/GSE176078/extracted", project_id="case01")
 get_job_status(job_id="<extract-job-id>")
-start_seurat_basic(project_id="case01", input_path="my_10x_folder", input_type="10x_mtx", species="human")
+validate_data_analysis_qc(project_id="case01", input_path="case01/GSE176078/extracted_sample", input_type="10x_nonstandard")
 start_seurat_basic(project_id="case01", input_path="case01/GSE176078/extracted_sample", input_type="10x_nonstandard", species="human")
 start_scanpy_basic(project_id="case01", input_path="processed.h5ad", input_type="h5ad", species="human")
 start_scanpy_basic(project_id="case02", input_path="sample_10x", input_type="10x_mtx", species="human", sample_id="sample_10x")

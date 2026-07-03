@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local optional MCP-like HTTP backend for lightweight scRNA-seq tasks.
+"""Local optional MCP-like HTTP backend for sandboxed scRNA-seq tasks.
 
 This server intentionally exposes only a small whitelist of tools. It never
 executes user-provided shell commands and restricts user input files to
@@ -12,6 +12,7 @@ import argparse
 import base64
 import csv
 import gzip
+import html
 import importlib.util
 import ipaddress
 import json
@@ -22,14 +23,16 @@ import shutil
 import socket
 import subprocess
 import sys
+import tarfile
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse, unquote
 from urllib.request import Request, urlopen
 
 
@@ -52,9 +55,13 @@ PIPELINES = [
     "downstream_proposal",
     "cellchat",
     "monocle3",
-    "full_workflow_selftest",
-    "demo_pipeline",
     "report_skeleton",
+    "geo_download",
+]
+
+SYNTHETIC_TEST_PIPELINES = [
+    "demo_pipeline",
+    "full_workflow_selftest",
 ]
 
 FORBIDDEN_PATH_HINTS = [
@@ -86,6 +93,7 @@ MAX_READ_BYTES = 1_000_000
 MAX_WRITE_BYTES = 5_000_000
 MAX_DOWNLOAD_BYTES = 2_000_000_000
 MAX_RUN_TIMEOUT_SECONDS = 7200
+GEO_FTP_BASE = "https://ftp.ncbi.nlm.nih.gov/geo/series/"
 
 FORBIDDEN_CODE_PATTERNS = [
     r"\bsubprocess\b",
@@ -188,6 +196,94 @@ def validate_download_url(url: str) -> str:
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
             raise ValueError("Downloads from private, local, or reserved network addresses are not allowed")
     return url
+
+
+def geo_series_bucket(gse_accession: str) -> str:
+    match = re.fullmatch(r"GSE(\d+)", gse_accession.strip().upper())
+    if not match:
+        raise ValueError("gse_accession must look like GSE12345")
+    digits = match.group(1)
+    if len(digits) <= 3:
+        bucket = "GSEnnn"
+    else:
+        bucket = f"GSE{digits[:-3]}nnn"
+    return bucket
+
+
+def geo_suppl_url(gse_accession: str) -> str:
+    gse = gse_accession.strip().upper()
+    return urljoin(GEO_FTP_BASE, f"{geo_series_bucket(gse)}/{gse}/suppl/")
+
+
+def fetch_geo_supplementary_listing(gse_accession: str) -> list[dict[str, Any]]:
+    base_url = geo_suppl_url(gse_accession)
+    safe_url = validate_download_url(base_url)
+    request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
+    with urlopen(request, timeout=120) as response:
+        text = response.read().decode("utf-8", errors="replace")
+    files: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for href in re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.IGNORECASE):
+        href = html.unescape(href)
+        if href.startswith("?") or href.startswith("/") or href in {"../", "./"}:
+            continue
+        full_url = urljoin(base_url, href)
+        if not full_url.startswith(base_url):
+            continue
+        filename = Path(unquote(href.rstrip("/"))).name
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        files.append({"filename": filename, "url": full_url})
+    return files
+
+
+def download_url_to_workspace(url: str, relative_path: str, overwrite: bool = False, max_bytes: int = MAX_DOWNLOAD_BYTES) -> tuple[Path, int, int | None]:
+    safe_url = validate_download_url(url)
+    path = validate_workspace_path(relative_path, must_exist=False, allow_dir=False)
+    if path.exists() and not overwrite:
+        raise FileExistsError("File exists. Set overwrite=true to replace it.")
+    max_bytes = max(1, min(int(max_bytes), MAX_DOWNLOAD_BYTES))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    total = 0
+    expected_size: int | None = None
+    attempts = 3
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        total = 0
+        request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
+        try:
+            with urlopen(request, timeout=120) as response, path.open("wb") as handle:
+                content_length = response.headers.get("Content-Length")
+                expected_size = int(content_length) if content_length and content_length.isdigit() else None
+                if expected_size is not None and expected_size > max_bytes:
+                    handle.close()
+                    path.unlink(missing_ok=True)
+                    raise ValueError(f"Download exceeds max_bytes={max_bytes}; remote size={expected_size}")
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        handle.close()
+                        path.unlink(missing_ok=True)
+                        raise ValueError(f"Download exceeds max_bytes={max_bytes}")
+                    handle.write(chunk)
+            if expected_size is None or total == expected_size:
+                break
+            last_error = f"incomplete download: got {total} bytes, expected {expected_size}"
+            path.unlink(missing_ok=True)
+        except Exception as exc:
+            last_error = str(exc)
+            path.unlink(missing_ok=True)
+        if attempt < attempts:
+            time.sleep(2 * attempt)
+    if expected_size is not None and total != expected_size:
+        raise ValueError(last_error or f"incomplete download: got {total} bytes, expected {expected_size}")
+    if not path.exists():
+        raise ValueError(last_error or "download failed")
+    return path, total, expected_size
 
 
 def scan_code_for_sandbox_violations(script_path: Path) -> list[str]:
@@ -326,6 +422,21 @@ def validate_input_path(input_path: str) -> Path:
     return candidate
 
 
+def validate_input_output_dir(relative_path: str) -> Path:
+    if not relative_path:
+        raise ValueError("output_dir is required")
+    lowered = relative_path.lower()
+    if any(hint in lowered for hint in FORBIDDEN_PATH_HINTS):
+        raise ValueError("output_dir appears to reference a forbidden private/system location")
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        raise ValueError("Only relative output_dir values under workspace/inputs are allowed")
+    resolved = (INPUTS_DIR / candidate).resolve(strict=False)
+    if not is_relative_to(resolved, INPUTS_DIR):
+        raise ValueError("output_dir must stay inside mcp_server/workspace/inputs")
+    return resolved
+
+
 def log_event(tool: str, job_id: str, payload: dict[str, Any]) -> Path:
     ensure_workspace()
     log_file = LOGS_DIR / f"{safe_slug(tool)}-{job_id}.log"
@@ -379,15 +490,15 @@ def tool_ping() -> dict[str, Any]:
 
 def tool_list_available_pipelines() -> dict[str, Any]:
     job_id = uuid.uuid4().hex
-    log_file = log_event("list_available_pipelines", job_id, {"pipelines": PIPELINES})
+    log_file = log_event("list_available_pipelines", job_id, {"pipelines": PIPELINES, "synthetic_test_pipelines": SYNTHETIC_TEST_PIPELINES})
     return response_payload(
         status="ok",
         project_id=None,
         job_id=job_id,
         output_dir=OUTPUTS_DIR,
         log_file=log_file,
-        message="Available whitelisted pipelines returned.",
-        data={"pipelines": PIPELINES},
+        message="Real-data whitelisted pipelines returned. Synthetic demo/selftest tools are hidden from the normal pipeline list and require explicit confirmation.",
+        data={"pipelines": PIPELINES, "synthetic_test_pipelines": SYNTHETIC_TEST_PIPELINES},
     )
 
 
@@ -419,9 +530,20 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
-def tool_run_demo_pipeline(project_id: str) -> dict[str, Any]:
+def tool_run_demo_pipeline(project_id: str, confirm_synthetic: bool = False) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_dir = require_project_dir(project_id, create=True)
+    if not confirm_synthetic:
+        log_file = log_event("run_demo_pipeline", job_id, {"project_id": project_id, "status": "blocked_requires_confirmation"})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Synthetic demo generation is disabled by default. For real analysis, download/upload data into workspace/inputs and call run_seurat_basic or run_scanpy_basic. To intentionally test demo output, call run_demo_pipeline with confirm_synthetic=true.",
+            warnings=["This tool must not be used as evidence that real GEO data were analyzed."],
+        )
     tables_dir = project_dir / "tables"
 
     write_csv(
@@ -509,7 +631,13 @@ def tool_list_result_files(project_id: str) -> dict[str, Any]:
 def tool_read_report(project_id: str) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_dir = require_project_dir(project_id, create=False)
-    report = project_dir / "report_skeleton.md"
+    report_candidates = [
+        project_dir / "manuscript_report.md",
+        project_dir / "result_quality_check.md",
+        project_dir / "downstream_proposal.md",
+        project_dir / "report_skeleton.md",
+    ]
+    report = next((path for path in report_candidates if path.exists()), report_candidates[0])
     if not report.exists():
         log_file = log_event("read_report", job_id, {"project_id": project_id, "status": "missing_report"})
         return response_payload(
@@ -518,8 +646,8 @@ def tool_read_report(project_id: str) -> dict[str, Any]:
             job_id=job_id,
             output_dir=project_dir,
             log_file=log_file,
-            message="report_skeleton.md not found. Run run_demo_pipeline first or create the report.",
-            warnings=["No report file exists for this project."],
+            message="No readable report found for this project. Run a real workflow and validate/report the result first.",
+            warnings=["Expected one of manuscript_report.md, result_quality_check.md, downstream_proposal.md, or report_skeleton.md."],
         )
     text = report.read_text(encoding="utf-8")
     log_file = log_event("read_report", job_id, {"project_id": project_id, "status": "ok"})
@@ -534,6 +662,159 @@ def tool_read_report(project_id: str) -> dict[str, Any]:
     )
 
 
+def tool_list_geo_supplementary_files(gse_accession: str, file_regex: str = "") -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    files = fetch_geo_supplementary_listing(gse_accession)
+    if file_regex:
+        pattern = re.compile(file_regex, flags=re.IGNORECASE)
+        files = [item for item in files if pattern.search(item["filename"])]
+    log_file = log_event("list_geo_supplementary_files", job_id, {"gse_accession": gse_accession, "n_files": len(files)})
+    return response_payload(
+        status="ok",
+        project_id=None,
+        job_id=job_id,
+        output_dir=INPUTS_DIR,
+        log_file=log_file,
+        message="GEO supplementary files listed. No data were generated or analyzed.",
+        warnings=["Choose real files to download before running Scanpy or Seurat. Listing a GEO directory is not an analysis."],
+        data={"gse_accession": gse_accession.strip().upper(), "suppl_url": geo_suppl_url(gse_accession), "files": files},
+    )
+
+
+def tool_download_geo_supplementary(
+    project_id: str,
+    gse_accession: str,
+    file_regex: str = "",
+    max_files: int = 20,
+    overwrite: bool = False,
+    max_bytes_per_file: int = MAX_DOWNLOAD_BYTES,
+) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    project_slug = safe_slug(project_id)
+    require_project_dir(project_slug, create=True)
+    files = fetch_geo_supplementary_listing(gse_accession)
+    if file_regex:
+        pattern = re.compile(file_regex, flags=re.IGNORECASE)
+        files = [item for item in files if pattern.search(item["filename"])]
+    files = files[: max(1, min(int(max_files), 100))]
+    if not files:
+        raise FileNotFoundError("No GEO supplementary files matched the requested accession/filter.")
+
+    downloaded: list[dict[str, Any]] = []
+    errors: list[str] = []
+    target_dir = f"inputs/{project_slug}/{gse_accession.strip().upper()}"
+    for item in files:
+        filename = safe_slug(item["filename"], "geo_file")
+        relative_path = f"{target_dir}/{filename}"
+        try:
+            path, size, expected_size = download_url_to_workspace(item["url"], relative_path, overwrite=overwrite, max_bytes=max_bytes_per_file)
+            downloaded.append({"filename": item["filename"], "workspace_path": workspace_relative(path), "url": item["url"], "size": size, "expected_size": expected_size})
+        except Exception as exc:
+            errors.append(f"{item['filename']}: {exc}")
+
+    log_file = log_event("download_geo_supplementary", job_id, {"project_id": project_slug, "gse_accession": gse_accession, "downloaded": len(downloaded), "errors": errors})
+    status = "ok" if downloaded and not errors else ("warning" if downloaded else "error")
+    return response_payload(
+        status=status,
+        project_id=project_slug,
+        job_id=job_id,
+        output_dir=INPUTS_DIR / project_slug / gse_accession.strip().upper(),
+        log_file=log_file,
+        message="Downloaded real GEO supplementary files into workspace/inputs." if downloaded else "No GEO supplementary files were downloaded.",
+        warnings=errors + ["Archives must be extracted/inspected before choosing input_type if downloaded files are tar/tar.gz/tgz."],
+        data={"downloaded": downloaded, "errors": errors, "input_dir": f"{project_slug}/{gse_accession.strip().upper()}"},
+    )
+
+
+def tool_extract_workspace_archive(archive_path: str, output_dir: str = "", overwrite: bool = False, max_members: int = 20000) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    archive = validate_input_path(archive_path)
+    if not archive.exists() or not archive.is_file():
+        raise FileNotFoundError("archive_path must point to an existing file under workspace/inputs")
+    if not output_dir:
+        name = archive.name
+        for suffix in [".tar.gz", ".tgz", ".tar", ".zip", ".gz"]:
+            if name.lower().endswith(suffix):
+                name = name[: -len(suffix)]
+                break
+        output_dir = str(Path(archive_path).with_name(name))
+    out_dir = validate_input_output_dir(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    extracted: list[str] = []
+
+    def target_for(member_name: str) -> Path:
+        normalized = Path(member_name)
+        if normalized.is_absolute() or ".." in normalized.parts:
+            raise ValueError(f"Unsafe archive member path: {member_name}")
+        target = (out_dir / normalized).resolve(strict=False)
+        if not is_relative_to(target, out_dir):
+            raise ValueError(f"Archive member escapes output_dir: {member_name}")
+        return target
+
+    suffixes = "".join(archive.suffixes).lower()
+    if suffixes.endswith((".tar", ".tar.gz", ".tgz")):
+        mode = "r:gz" if suffixes.endswith((".tar.gz", ".tgz")) else "r:"
+        with tarfile.open(archive, mode) as tf:
+            members = tf.getmembers()
+            if len(members) > max_members:
+                raise ValueError(f"Archive has {len(members)} members, exceeding max_members={max_members}")
+            for member in members:
+                target = target_for(member.name)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if not member.isfile():
+                    continue
+                if target.exists() and not overwrite:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                src = tf.extractfile(member)
+                if src is None:
+                    continue
+                with src, target.open("wb") as handle:
+                    shutil.copyfileobj(src, handle)
+                extracted.append(workspace_relative(target))
+    elif suffixes.endswith(".zip"):
+        with zipfile.ZipFile(archive) as zf:
+            infos = zf.infolist()
+            if len(infos) > max_members:
+                raise ValueError(f"Archive has {len(infos)} members, exceeding max_members={max_members}")
+            for info in infos:
+                target = target_for(info.filename)
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if target.exists() and not overwrite:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, target.open("wb") as handle:
+                    shutil.copyfileobj(src, handle)
+                extracted.append(workspace_relative(target))
+    elif suffixes.endswith(".gz"):
+        target = out_dir / archive.with_suffix("").name
+        if target.exists() and not overwrite:
+            raise FileExistsError("Extracted file exists. Set overwrite=true to replace it.")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(archive, "rb") as src, target.open("wb") as handle:
+            shutil.copyfileobj(src, handle)
+        extracted.append(workspace_relative(target))
+    else:
+        raise ValueError("Supported archives: .tar, .tar.gz, .tgz, .zip, or single-file .gz")
+
+    log_file = log_event("extract_workspace_archive", job_id, {"archive_path": archive_path, "output_dir": output_dir, "n_files": len(extracted)})
+    return response_payload(
+        status="ok",
+        project_id=None,
+        job_id=job_id,
+        output_dir=out_dir,
+        log_file=log_file,
+        message="Archive extracted inside workspace/inputs. Inspect extracted files before choosing the analysis input_type.",
+        warnings=[] if extracted else ["No files were extracted; existing files may have been skipped because overwrite=false."],
+        data={"archive": workspace_relative(archive), "output_dir": str(out_dir.relative_to(INPUTS_DIR)).replace("\\", "/"), "files": extracted[:500], "n_files": len(extracted)},
+    )
+
+
 def validate_optional_input_path(input_path: str) -> str:
     if not input_path:
         return ""
@@ -544,6 +825,8 @@ def infer_input_type(path: Path, input_type: str = "") -> str:
     if input_type:
         return input_type
     if path.is_dir():
+        if is_nonstandard_10x_dir(path):
+            return "10x_nonstandard"
         return "10x_mtx"
     suffixes = "".join(path.suffixes).lower()
     if suffixes.endswith(".h5ad"):
@@ -555,6 +838,24 @@ def infer_input_type(path: Path, input_type: str = "") -> str:
     if suffixes.endswith(".csv") or suffixes.endswith(".csv.gz"):
         return "csv"
     return "unknown"
+
+
+def is_nonstandard_10x_dir(path: Path) -> bool:
+    def has_triplet(directory: Path) -> bool:
+        names = {child.name.lower() for child in directory.iterdir() if child.is_file()}
+        has_matrix = bool({"count_matrix_sparse.mtx", "count_matrix_sparse.mtx.gz"} & names)
+        has_barcodes = bool({"count_matrix_barcodes.tsv", "count_matrix_barcodes.tsv.gz"} & names)
+        has_genes = bool({"count_matrix_genes.tsv", "count_matrix_genes.tsv.gz"} & names)
+        return has_matrix and has_barcodes and has_genes
+
+    if not path.exists() or not path.is_dir():
+        return False
+    if has_triplet(path):
+        return True
+    try:
+        return any(child.is_dir() and has_triplet(child) for child in path.iterdir())
+    except OSError:
+        return False
 
 
 def find_rscript() -> str | None:
@@ -1010,8 +1311,8 @@ def tool_render_workflow_scripts(
     input_candidate = validate_input_path(input_path)
     metadata_candidate = validate_optional_input_path(metadata_path)
     inferred_type = infer_input_type(input_candidate, input_type)
-    if inferred_type not in {"10x_mtx", "10x_h5", "rds", "csv"}:
-        raise ValueError("Seurat workflow supports 10x_mtx, 10x_h5, rds, and csv inputs.")
+    if inferred_type not in {"10x_mtx", "10x_nonstandard", "10x_h5", "rds", "csv"}:
+        raise ValueError("Seurat workflow supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv inputs.")
     scripts = render_seurat_workflow_scripts(
         project_dir,
         input_candidate,
@@ -1175,8 +1476,8 @@ def tool_run_seurat_basic(
         )
     metadata_candidate = validate_optional_input_path(metadata_path)
     inferred_type = infer_input_type(candidate, input_type)
-    if inferred_type not in {"10x_mtx", "10x_h5", "rds", "csv"}:
-        raise ValueError("Seurat workflow supports 10x_mtx, 10x_h5, rds, and csv inputs.")
+    if inferred_type not in {"10x_mtx", "10x_nonstandard", "10x_h5", "rds", "csv"}:
+        raise ValueError("Seurat workflow supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv inputs.")
     scripts = render_seurat_workflow_scripts(
         project_dir,
         candidate,
@@ -1424,10 +1725,21 @@ def tool_run_monocle3(
     )
 
 
-def tool_run_full_workflow_selftest(project_id: str = "mcp_selftest_full_modules", timeout_seconds: int = 7200) -> dict[str, Any]:
+def tool_run_full_workflow_selftest(project_id: str = "mcp_selftest_full_modules", timeout_seconds: int = 7200, confirm_synthetic: bool = False) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_slug = safe_slug(project_id, "mcp_selftest_full_modules")
     project_dir = require_project_dir(project_slug, create=True)
+    if not confirm_synthetic:
+        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "blocked_requires_confirmation"})
+        return response_payload(
+            status="error",
+            project_id=project_slug,
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Synthetic full workflow selftest is disabled by default. For real testing, call list_geo_supplementary_files/download_geo_supplementary or download_to_workspace, then run_seurat_basic/run_scanpy_basic on the downloaded input. To intentionally run the synthetic selftest, pass confirm_synthetic=true.",
+            warnings=["This selftest creates synthetic data and must not be treated as real GEO analysis."],
+        )
     input_summary = write_selftest_10x_input()
     steps: list[dict[str, Any]] = []
 
@@ -1644,49 +1956,7 @@ def tool_write_workspace_file(
 def tool_download_to_workspace(url: str, relative_path: str, overwrite: bool = False, max_bytes: int = MAX_DOWNLOAD_BYTES) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     safe_url = validate_download_url(url)
-    path = validate_workspace_path(relative_path, must_exist=False, allow_dir=False)
-    if path.exists() and not overwrite:
-        raise FileExistsError("File exists. Set overwrite=true to replace it.")
-    max_bytes = max(1, min(int(max_bytes), MAX_DOWNLOAD_BYTES))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    total = 0
-    expected_size: int | None = None
-    attempts = 3
-    last_error = ""
-    for attempt in range(1, attempts + 1):
-        total = 0
-        request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
-        try:
-            with urlopen(request, timeout=120) as response, path.open("wb") as handle:
-                content_length = response.headers.get("Content-Length")
-                expected_size = int(content_length) if content_length and content_length.isdigit() else None
-                if expected_size is not None and expected_size > max_bytes:
-                    handle.close()
-                    path.unlink(missing_ok=True)
-                    raise ValueError(f"Download exceeds max_bytes={max_bytes}; remote size={expected_size}")
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > max_bytes:
-                        handle.close()
-                        path.unlink(missing_ok=True)
-                        raise ValueError(f"Download exceeds max_bytes={max_bytes}")
-                    handle.write(chunk)
-            if expected_size is None or total == expected_size:
-                break
-            last_error = f"incomplete download: got {total} bytes, expected {expected_size}"
-            path.unlink(missing_ok=True)
-        except Exception as exc:
-            last_error = str(exc)
-            path.unlink(missing_ok=True)
-        if attempt < attempts:
-            time.sleep(2 * attempt)
-    if expected_size is not None and total != expected_size:
-        raise ValueError(last_error or f"incomplete download: got {total} bytes, expected {expected_size}")
-    if not path.exists():
-        raise ValueError(last_error or "download failed")
+    path, total, expected_size = download_url_to_workspace(url, relative_path, overwrite=overwrite, max_bytes=max_bytes)
     log_file = log_event("download_to_workspace", job_id, {"url": safe_url, "relative_path": relative_path, "bytes": total, "expected_size": expected_size})
     return response_payload(
         status="ok",
@@ -1837,6 +2107,9 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "run_demo_pipeline": tool_run_demo_pipeline,
     "list_result_files": tool_list_result_files,
     "read_report": tool_read_report,
+    "list_geo_supplementary_files": tool_list_geo_supplementary_files,
+    "download_geo_supplementary": tool_download_geo_supplementary,
+    "extract_workspace_archive": tool_extract_workspace_archive,
     "list_skill_runtime_files": tool_list_skill_runtime_files,
     "read_skill_runtime_file": tool_read_skill_runtime_file,
     "check_runtime_environment": tool_check_runtime_environment,
@@ -1860,20 +2133,21 @@ TOOL_SCHEMAS = [
     {"name": "ping", "description": "Return service status, current time, and workspace paths.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "list_available_pipelines", "description": "List whitelisted local pipelines.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "create_project", "description": "Create a project under workspace/outputs.", "inputSchema": {"type": "object", "properties": {"project_name": {"type": "string"}}, "required": ["project_name"]}},
-    {"name": "run_demo_pipeline", "description": "Generate lightweight synthetic result files without private data.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "list_result_files", "description": "List files under one project output directory.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "read_report", "description": "Read report_skeleton.md from one project.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
+    {"name": "list_geo_supplementary_files", "description": "List real GEO supplementary files for a GSE accession without downloading or generating data.", "inputSchema": {"type": "object", "properties": {"gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}}, "required": ["gse_accession"]}},
+    {"name": "download_geo_supplementary", "description": "Download selected real GEO supplementary files into workspace/inputs/<project>/<GSE>; does not generate synthetic data or run analysis.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 20}, "overwrite": {"type": "boolean", "default": False}, "max_bytes_per_file": {"type": "integer", "default": MAX_DOWNLOAD_BYTES}}, "required": ["project_id", "gse_accession"]}},
+    {"name": "extract_workspace_archive", "description": "Extract a downloaded archive under workspace/inputs into workspace/inputs, with path traversal protection.", "inputSchema": {"type": "object", "properties": {"archive_path": {"type": "string"}, "output_dir": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}, "max_members": {"type": "integer", "default": 20000}}, "required": ["archive_path"]}},
     {"name": "list_skill_runtime_files", "description": "List read-only copied Skill assets: agents, references, workflows, templates, and course scripts.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 300}}}},
     {"name": "read_skill_runtime_file", "description": "Read a read-only copied Skill runtime file.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
     {"name": "check_runtime_environment", "description": "Check Python and R package readiness for Scanpy, Seurat, SingleR, CellChat, and Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "environment_check"}}}},
-    {"name": "render_workflow_scripts", "description": "Render Seurat, SingleR, marker, CellChat, and Monocle3 scripts into a project without running them.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}}, "required": ["project_id", "input_path"]}},
-    {"name": "run_scanpy_basic", "description": "Run the whitelisted Scanpy QC, clustering, metadata/default-group, annotation-evidence, marker, enrichment, and figure pipeline.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "group_col": {"type": "string", "default": ""}, "annotation_method": {"type": "string", "default": "marker_summary"}, "timeout_seconds": {"type": "integer", "default": 3600}}, "required": ["project_id", "input_path"]}},
-    {"name": "run_seurat_basic", "description": "Run whitelisted Seurat V5 core pipeline, SingleR annotation, marker/enrichment, validation, and downstream proposal.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}, "run_annotation": {"type": "boolean", "default": True}, "run_marker_enrichment": {"type": "boolean", "default": True}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "input_path"]}},
+    {"name": "render_workflow_scripts", "description": "Render Seurat, SingleR, marker, CellChat, and Monocle3 scripts for a real input under workspace/inputs without running them.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}}, "required": ["project_id", "input_path"]}},
+    {"name": "run_scanpy_basic", "description": "Run the whitelisted Scanpy QC/clustering/annotation-evidence workflow on a real h5ad/10x input under workspace/inputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "group_col": {"type": "string", "default": ""}, "annotation_method": {"type": "string", "default": "marker_summary"}, "timeout_seconds": {"type": "integer", "default": 3600}}, "required": ["project_id", "input_path"]}},
+    {"name": "run_seurat_basic", "description": "Run whitelisted Seurat V5 workflow on a real input under workspace/inputs; supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}, "run_annotation": {"type": "boolean", "default": True}, "run_marker_enrichment": {"type": "boolean", "default": True}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "input_path"]}},
     {"name": "propose_downstream_modules", "description": "Generate downstream_proposal.md from upstream annotation and marker results before CellChat/Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "validate_result_bundle", "description": "Generate result_quality_check.md from project outputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "run_cellchat", "description": "Run CellChat only after explicit approval_token='APPROVED_CELLCHAT'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "species": {"type": "string", "default": "human"}, "min_cells": {"type": "integer", "default": 10}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
     {"name": "run_monocle3", "description": "Run Monocle3 only after explicit approval_token='APPROVED_MONOCLE3'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "subset_query": {"type": "string", "default": ""}, "root_query": {"type": "string", "default": ""}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
-    {"name": "run_full_workflow_selftest", "description": "Run a fixed synthetic local MCP selftest through Seurat, SingleR, marker enrichment, CellChat, Monocle3, and result QC.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "mcp_selftest_full_modules"}, "timeout_seconds": {"type": "integer", "default": 7200}}}},
     {"name": "list_workspace_files", "description": "List files under the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 200}}}},
     {"name": "read_workspace_file", "description": "Read a text or base64-encoded file from the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
     {"name": "write_workspace_file", "description": "Write text or base64 content into the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string", "default": ""}, "content_base64": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}}, "required": ["relative_path"]}},

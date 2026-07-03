@@ -1,6 +1,6 @@
 ---
 name: scmechanism-agent
-description: "Use for GEO/SRA/public or local single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, prepare/check Windows R/Python Seurat V5 environments before running code, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript/report text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, Seurat V5 course-derived workflows, platform validation cases, and report/log generation after a full run."
+description: "Use for GEO/SRA/public or local single-cell research workflows: parse clinical research questions, diagnose supplementary file formats, prepare/check Windows R/Python Seurat V5 environments before running code, plan Seurat/Scanpy analysis, generate local runnable code templates, check uploaded result quality, and draft cautious biological interpretation and manuscript/report text. Also use for local 10x matrices, Seurat RDS, h5ad, loom, marker tables, CellChat, pseudotime, enrichment, CNV, deconvolution, Seurat V5 course-derived workflows, and report/log generation after a full run."
 ---
 
 # scMechanism Agent: Public Single-cell Research Skill
@@ -52,7 +52,6 @@ Start every task by determining which of these modes applies:
 8. **Downstream proposal gate**: before CellChat or Monocle3, run `scripts/propose_downstream_modules.py`, present `downstream_proposal.md`, and wait for user approval.
 9. **Approved downstream execution**: only after approval, render `scripts/course_adapted/03_cellchat_from_seurat.R` or `scripts/course_adapted/04_monocle3_from_seurat.R` with the approved scope.
 10. **Biological interpretation/report**: use agents 06-08, then run `scripts/write_analysis_report.py` to generate a durable report from the actual result tables.
-11. **Platform submission check**: before packaging or contest submission, read `references/platform-submission-checklist.md`, update `examples/validation_input_output_comparison.md` with at least 5 validation cases, run `scripts/validate_platform_skill.py`, and build the upload zip with `scripts/package_platform_skill.py`.
 
 ## Script Layout
 
@@ -78,8 +77,6 @@ python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md
 python scripts/build_codebase_summary.py --course-root scripts/course_source --out CODEBASE_SUMMARY.md
 python scripts/write_analysis_report.py --result-dir analysis/run1 --metadata-json analysis/run1/report_metadata.json --out-md analysis/run1/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/run1 --out-md analysis/run1/full_workflow_validation.md
-python scripts/validate_platform_skill.py --skill-root .
-python scripts/package_platform_skill.py --skill-root . --out dist/scMechanism-Agent-skill.zip
 ```
 
 Use the PowerShell environment helpers before running Seurat V5 course-derived modules:
@@ -129,21 +126,6 @@ Read references selectively:
 | `references/environment/requirements.md` | R, Python, R package, and external software inventory. |
 | `references/environment/path-setup.md` | PATH, Rscript, Rtools, JAGS, gzip, and Conda setup rules. |
 | `references/tested-lessons.md` | Hard-won fixes from real Windows/Seurat V5 test runs. |
-| `references/platform-submission-checklist.md` | Medical AI Skill platform upload structure, validation evidence, and package exclusions. |
-
-## Platform Contest Materials
-
-For Medical AI Skill platform submission, include reviewer-facing materials under `submission/platform/`:
-
-- `skill_brief.md`
-- `clinical_pain_point.md`
-- `implementation_plan.md`
-- `business_value.md`
-- `demo_script.md`
-- `validation_report.md`
-- `github_link.md`
-
-Keep full local workflow evidence under `submission/example/` for GitHub/local review. Do not include heavy local analysis outputs in the platform upload zip unless the platform explicitly requests them.
 
 ## Language Convention
 
@@ -192,9 +174,7 @@ A good answer or generated artifact should include:
 - Clear separation among observation, statistical inference, and mechanism hypothesis.
 - A generated `manuscript_report.md` or equivalent after result review when a full workflow has completed.
 - A run log that records environment checks, rendered scripts, executed modules, warnings, and output locations.
-- A passing `validate_full_workflow.py` check before publishing or uploading a completed example.
-- A maintained `examples/validation_input_output_comparison.md` with at least 5 conclusion-clear validation cases before contest submission.
-- A passing `validate_platform_skill.py` check and an allowlisted upload zip from `package_platform_skill.py` before uploading to the Medical AI Skill platform.
+- A passing `validate_full_workflow.py` check before sharing a completed local workflow.
 
 ## Safety
 

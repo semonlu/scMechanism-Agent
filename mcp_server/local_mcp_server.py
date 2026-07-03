@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import gzip
 import importlib.util
 import ipaddress
 import json
@@ -33,18 +34,25 @@ from urllib.request import Request, urlopen
 
 
 SERVER_ROOT = Path(__file__).resolve().parent
+SKILL_RUNTIME_DIR = SERVER_ROOT / "skill_runtime"
 WORKSPACE_ROOT = SERVER_ROOT / "workspace"
 INPUTS_DIR = WORKSPACE_ROOT / "inputs"
 OUTPUTS_DIR = WORKSPACE_ROOT / "outputs"
 LOGS_DIR = WORKSPACE_ROOT / "logs"
 CODE_DIR = WORKSPACE_ROOT / "code"
 RUNTIME_DIR = WORKSPACE_ROOT / "runtime"
+DEFAULT_ANALYSIS_PYTHON = r"C:\ProgramData\miniconda3\envs\seuratv5-course-py\python.exe"
 
 PIPELINES = [
     "scanpy_basic",
     "seurat_basic",
+    "seurat_full_workflow",
+    "singler_annotation",
+    "marker_enrichment",
+    "downstream_proposal",
     "cellchat",
     "monocle3",
+    "full_workflow_selftest",
     "demo_pipeline",
     "report_skeleton",
 ]
@@ -76,8 +84,8 @@ TEXT_FILE_SUFFIXES = {
 
 MAX_READ_BYTES = 1_000_000
 MAX_WRITE_BYTES = 5_000_000
-MAX_DOWNLOAD_BYTES = 100_000_000
-MAX_RUN_TIMEOUT_SECONDS = 300
+MAX_DOWNLOAD_BYTES = 2_000_000_000
+MAX_RUN_TIMEOUT_SECONDS = 7200
 
 FORBIDDEN_CODE_PATTERNS = [
     r"\bsubprocess\b",
@@ -526,7 +534,519 @@ def tool_read_report(project_id: str) -> dict[str, Any]:
     )
 
 
-def tool_run_scanpy_basic(project_id: str, input_path: str, species: str = "human") -> dict[str, Any]:
+def validate_optional_input_path(input_path: str) -> str:
+    if not input_path:
+        return ""
+    return str(validate_input_path(input_path))
+
+
+def infer_input_type(path: Path, input_type: str = "") -> str:
+    if input_type:
+        return input_type
+    if path.is_dir():
+        return "10x_mtx"
+    suffixes = "".join(path.suffixes).lower()
+    if suffixes.endswith(".h5ad"):
+        return "h5ad"
+    if suffixes.endswith(".h5") or suffixes.endswith(".hdf5"):
+        return "10x_h5"
+    if suffixes.endswith(".rds"):
+        return "rds"
+    if suffixes.endswith(".csv") or suffixes.endswith(".csv.gz"):
+        return "csv"
+    return "unknown"
+
+
+def find_rscript() -> str | None:
+    candidates = [
+        os.environ.get("RSCRIPT"),
+        shutil.which("Rscript"),
+        r"E:\R-4.4.2\bin\Rscript.exe",
+        r"C:\Program Files\R\R-4.4.2\bin\Rscript.exe",
+        r"C:\Program Files\R\R-4.4.1\bin\Rscript.exe",
+        r"C:\Program Files\R\R-4.3.3\bin\Rscript.exe",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return str(candidate)
+    return None
+
+
+def find_analysis_python() -> str:
+    candidates = [
+        os.environ.get("SCMECHANISM_PYTHON"),
+        os.environ.get("ANALYSIS_PYTHON"),
+        DEFAULT_ANALYSIS_PYTHON,
+        r"C:\ProgramData\miniconda3\envs\scmechanism-agent\python.exe",
+        r"C:\ProgramData\miniconda3\envs\singlecell-skill\python.exe",
+        sys.executable,
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return str(candidate)
+    return sys.executable
+
+
+def check_python_packages(python_exe: str, packages: list[str], timeout_seconds: int = 120) -> tuple[dict[str, bool], str]:
+    code = (
+        "import importlib.util, json, sys; "
+        f"mods={packages!r}; "
+        "print(json.dumps({'executable': sys.executable, 'version': sys.version, 'packages': {m: importlib.util.find_spec(m) is not None for m in mods}}, ensure_ascii=False))"
+    )
+    completed = subprocess.run(
+        [python_exe, "-c", code],
+        cwd=SERVER_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=timeout_seconds,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        return {pkg: False for pkg in packages}, (completed.stderr or "").strip() or (completed.stdout or "").strip()
+    payload = json.loads((completed.stdout or "").strip().splitlines()[-1])
+    return {str(k): bool(v) for k, v in payload["packages"].items()}, payload["version"]
+
+
+def skill_runtime_path(relative_path: str, *, must_exist: bool = True, allow_dir: bool = False) -> Path:
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("Skill runtime paths must be relative and cannot use parent traversal")
+    resolved = (SKILL_RUNTIME_DIR / candidate).resolve(strict=False)
+    if not is_relative_to(resolved, SKILL_RUNTIME_DIR):
+        raise ValueError("Skill runtime path escaped mcp_server/skill_runtime")
+    if must_exist and not resolved.exists():
+        raise FileNotFoundError(f"Skill runtime file not found: {relative_path}")
+    if resolved.exists() and resolved.is_dir() and not allow_dir:
+        raise ValueError("Expected a skill runtime file, got a directory")
+    return resolved
+
+
+def render_template_file(template: Path, out_file: Path, replacements: dict[str, str]) -> Path:
+    text = template.read_text(encoding="utf-8")
+    for key, value in replacements.items():
+        text = text.replace("{{" + key + "}}", value)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(text, encoding="utf-8")
+    return out_file
+
+
+def r_path(path: Path | str) -> str:
+    if not path:
+        return ""
+    return str(path).replace("\\", "/")
+
+
+def r_string(value: str) -> str:
+    """Escape a Python string for insertion inside an existing quoted R string."""
+    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
+def run_fixed_process(
+    *,
+    tool: str,
+    job_id: str,
+    project_dir: Path,
+    command: list[str],
+    timeout_seconds: int,
+    env_extra: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    safe_timeout = max(1, min(int(timeout_seconds), 24 * 60 * 60))
+    run_log = project_dir / "logs" / f"{tool}-{job_id}.log"
+    run_log.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    if env_extra:
+        env.update(env_extra)
+    completed = subprocess.run(
+        command,
+        cwd=SERVER_ROOT,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=safe_timeout,
+        shell=False,
+    )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    run_log.write_text(
+        json.dumps(
+            {
+                "time": utc_now(),
+                "command": command,
+                "returncode": completed.returncode,
+                "stdout": stdout[-20000:],
+                "stderr": stderr[-20000:],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return completed, run_log
+
+
+def collect_project_files(project_dir: Path, limit: int = 200) -> list[str]:
+    return [
+        str(path.relative_to(project_dir)).replace("\\", "/")
+        for path in sorted(project_dir.rglob("*"))
+        if path.is_file()
+    ][:limit]
+
+
+def safe_tool_status(tool_name: str, callback: Callable[..., dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    try:
+        result = callback(**kwargs)
+        if isinstance(result, dict):
+            return result
+        return {"status": "error", "message": f"{tool_name} returned a non-dict result", "data": {"repr": repr(result)}}
+    except Exception as exc:
+        return {"status": "error", "message": f"{tool_name} failed: {exc}", "data": {}}
+
+
+def write_selftest_10x_input() -> dict[str, Any]:
+    out = INPUTS_DIR / "mcp_selftest_10x_three_groups"
+    out.mkdir(parents=True, exist_ok=True)
+    for path in out.glob("*"):
+        if path.is_file():
+            path.unlink()
+    genes = [
+        "CD3D", "CD3E", "TRAC", "NKG7", "MS4A1", "CD79A", "CD79B", "CD74",
+        "LYZ", "LST1", "AIF1", "S100A8", "COL1A1", "COL1A2", "DCN", "LUM",
+        "PECAM1", "VWF", "MKI67", "TOP2A", "MALAT1", "ACTB", "GAPDH", "RPLP0",
+        "CXCL12", "CXCR4", "CCL2", "CCR2", "IL6", "IL6R", "IL6ST", "VEGFA", "KDR",
+        "SPP1", "CD44", "FN1", "ITGA5", "ITGB1", "MMP9", "TGFB1", "TGFBR1", "TGFBR2",
+    ]
+    groups = ["T_cell"] * 80 + ["B_cell"] * 80 + ["Myeloid"] * 80
+    boosts = {
+        "T_cell": {"CD3D", "CD3E", "TRAC", "NKG7", "CXCR4", "IL6R", "CD44", "ITGB1"},
+        "B_cell": {"MS4A1", "CD79A", "CD79B", "CD74", "CXCR4", "IL6R", "ITGB1"},
+        "Myeloid": {"LYZ", "LST1", "AIF1", "S100A8", "CCL2", "MMP9", "IL6", "TGFB1", "SPP1"},
+    }
+    shared_lr = {"CXCL12", "VEGFA", "FN1", "ITGA5", "TGFBR1", "TGFBR2"}
+    housekeeping = {"MALAT1", "ACTB", "GAPDH", "RPLP0"}
+    entries: list[tuple[int, int, int]] = []
+    for cell_index, group in enumerate(groups, start=1):
+        for gene_index, gene in enumerate(genes, start=1):
+            value = 1
+            if gene in boosts[group]:
+                value += 10 + (cell_index % 3)
+            if gene in shared_lr:
+                value += 3 + (cell_index % 2)
+            if gene in housekeeping:
+                value += 4
+            if value > 0:
+                entries.append((gene_index, cell_index, value))
+    with gzip.open(out / "matrix.mtx.gz", "wt", encoding="utf-8") as handle:
+        handle.write("%%MatrixMarket matrix coordinate integer general\n")
+        handle.write("% generated by scMechanism local MCP selftest\n")
+        handle.write(f"{len(genes)} {len(groups)} {len(entries)}\n")
+        for row, col, value in entries:
+            handle.write(f"{row} {col} {value}\n")
+    with gzip.open(out / "features.tsv.gz", "wt", encoding="utf-8") as handle:
+        for gene in genes:
+            handle.write(f"{gene}\t{gene}\tGene Expression\n")
+    with gzip.open(out / "barcodes.tsv.gz", "wt", encoding="utf-8") as handle:
+        for i in range(len(groups)):
+            handle.write(f"SELFTEST_{i + 1:03d}-1\n")
+    metadata = out / "metadata.csv"
+    with metadata.open("w", encoding="utf-8") as handle:
+        handle.write("barcode,known_group,sample_id,batch,condition,stage\n")
+        for i, group in enumerate(groups):
+            handle.write(f"SELFTEST_{i + 1:03d}-1,{group},selftest_1,batch1,test,{group}\n")
+    summary = {
+        "input_path": "mcp_selftest_10x_three_groups",
+        "metadata_path": "mcp_selftest_10x_three_groups/metadata.csv",
+        "cells": len(groups),
+        "genes": len(genes),
+        "groups": sorted(set(groups)),
+    }
+    (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return summary
+
+
+def render_seurat_workflow_scripts(
+    project_dir: Path,
+    input_path: Path,
+    *,
+    input_type: str,
+    species: str,
+    sample_id: str,
+    metadata_path: str = "",
+    batch_col: str = "",
+    condition_col: str = "",
+    reference_name: str = "",
+    celltype_col: str = "singleR_label",
+    subset_query: str = "",
+    root_query: str = "",
+) -> dict[str, Path]:
+    scripts_dir = project_dir / "scripts"
+    seurat_out = project_dir / "seurat_basic"
+    annotation_out = project_dir / "singler_annotation"
+    marker_out = project_dir / "marker_enrichment"
+    cellchat_out = project_dir / "cellchat"
+    monocle_out = project_dir / "monocle3"
+    organism = species.lower()
+    reference = reference_name or ("mouse_rnaseq" if organism == "mouse" else "hpca")
+    rds_core = seurat_out / "objects" / "processed_seurat.rds"
+    rds_annotated = annotation_out / "objects" / "seurat_singleR_annotated.rds"
+
+    scripts = {
+        "seurat_basic": render_template_file(
+            skill_runtime_path("scripts/course_adapted/01_seurat_v5_core_pipeline.R"),
+            scripts_dir / "01_seurat_v5_core_pipeline.R",
+            {
+                "INPUT_PATH": r_path(input_path),
+                "METADATA_PATH": r_path(metadata_path),
+                "OUTPUT_DIR": r_path(seurat_out),
+                "ORGANISM": organism,
+                "SAMPLE_ID": sample_id,
+                "BATCH_COL": batch_col,
+                "CONDITION_COL": condition_col,
+                "INPUT_TYPE": input_type,
+            },
+        ),
+        "singler_annotation": render_template_file(
+            skill_runtime_path("scripts/course_adapted/05_singler_cell_annotation.R"),
+            scripts_dir / "05_singler_cell_annotation.R",
+            {
+                "INPUT_RDS": r_path(rds_core),
+                "OUTPUT_DIR": r_path(annotation_out),
+                "ORGANISM": organism,
+                "REFERENCE_NAME": reference,
+                "CLUSTER_COL": "seurat_clusters",
+            },
+        ),
+        "marker_enrichment": render_template_file(
+            skill_runtime_path("scripts/course_adapted/02_marker_enrichment_from_seurat.R"),
+            scripts_dir / "02_marker_enrichment_from_seurat.R",
+            {
+                "SEURAT_RDS": r_path(rds_annotated),
+                "OUTPUT_DIR": r_path(marker_out),
+                "CLUSTER_COL": celltype_col,
+                "ORGANISM": organism,
+                "TOP_N": "20",
+            },
+        ),
+        "cellchat": render_template_file(
+            skill_runtime_path("scripts/course_adapted/03_cellchat_from_seurat.R"),
+            scripts_dir / "03_cellchat_from_seurat.R",
+            {
+                "SEURAT_RDS": r_path(rds_annotated),
+                "OUTPUT_DIR": r_path(cellchat_out),
+                "CELLTYPE_COL": celltype_col,
+                "ORGANISM": organism,
+                "MIN_CELLS": "10",
+            },
+        ),
+        "monocle3": render_template_file(
+            skill_runtime_path("scripts/course_adapted/04_monocle3_from_seurat.R"),
+            scripts_dir / "04_monocle3_from_seurat.R",
+            {
+                "SEURAT_RDS": r_path(rds_annotated),
+                "OUTPUT_DIR": r_path(monocle_out),
+                "CELLTYPE_COL": celltype_col,
+                "SUBSET_QUERY": r_string(subset_query),
+                "ROOT_CELLS_FILE": "",
+                "ROOT_QUERY": r_string(root_query),
+                "MAX_CELLS": "8000",
+                "BALANCE_COL": celltype_col,
+                "USE_SEURAT_UMAP": "true",
+                "RANDOM_SEED": "20260702",
+            },
+        ),
+    }
+    (scripts_dir / "README.md").write_text(
+        "\n".join(
+            [
+                "# Rendered scMechanism MCP Workflow Scripts",
+                "",
+                "Run order:",
+                "1. 01_seurat_v5_core_pipeline.R",
+                "2. 05_singler_cell_annotation.R",
+                "3. 02_marker_enrichment_from_seurat.R",
+                "4. Generate downstream_proposal.md and ask the user for approval.",
+                "5. Only after approval, run 03_cellchat_from_seurat.R or 04_monocle3_from_seurat.R.",
+                "",
+                "All inputs and outputs are restricted to mcp_server/workspace.",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return scripts
+
+
+def tool_list_skill_runtime_files(relative_path: str = "", max_files: int = 300) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    root = SKILL_RUNTIME_DIR if not relative_path else skill_runtime_path(relative_path, must_exist=True, allow_dir=True)
+    files = []
+    if root.is_file():
+        paths = [root]
+    else:
+        paths = [path for path in sorted(root.rglob("*")) if path.is_file()]
+    for path in paths[: max(1, min(int(max_files), 1000))]:
+        files.append({
+            "path": str(path.relative_to(SKILL_RUNTIME_DIR)).replace("\\", "/"),
+            "size": path.stat().st_size,
+        })
+    log_file = log_event("list_skill_runtime_files", job_id, {"relative_path": relative_path, "n_files": len(files)})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=SKILL_RUNTIME_DIR,
+        log_file=log_file,
+        message="Read-only skill runtime files listed.",
+        data={"files": files, "skill_runtime": str(SKILL_RUNTIME_DIR)},
+    )
+
+
+def tool_read_skill_runtime_file(relative_path: str, max_bytes: int = MAX_READ_BYTES) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    path = skill_runtime_path(relative_path, must_exist=True, allow_dir=False)
+    max_bytes = max(1, min(int(max_bytes), MAX_READ_BYTES))
+    raw = path.read_bytes()
+    truncated = len(raw) > max_bytes
+    raw_slice = raw[:max_bytes]
+    data: dict[str, Any] = {
+        "path": str(path.relative_to(SKILL_RUNTIME_DIR)).replace("\\", "/"),
+        "size": len(raw),
+        "truncated": truncated,
+    }
+    if path.suffix.lower() in TEXT_FILE_SUFFIXES:
+        data["content"] = raw_slice.decode("utf-8", errors="replace")
+        data["encoding"] = "utf-8"
+    else:
+        data["content_base64"] = base64.b64encode(raw_slice).decode("ascii")
+        data["encoding"] = "base64"
+    log_file = log_event("read_skill_runtime_file", job_id, {"relative_path": relative_path, "bytes": len(raw_slice)})
+    return response_payload(
+        status="ok",
+        job_id=job_id,
+        output_dir=SKILL_RUNTIME_DIR,
+        log_file=log_file,
+        message="Read-only skill runtime file returned.",
+        warnings=["File was truncated to max_bytes."] if truncated else [],
+        data=data,
+    )
+
+
+def tool_check_runtime_environment(project_id: str = "environment_check") -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=True)
+    job_id = uuid.uuid4().hex
+    packages = ["scanpy", "anndata", "pandas", "numpy", "scipy", "matplotlib", "seaborn", "celltypist", "gseapy", "bbknn", "scanorama", "harmonypy", "liana", "leidenalg", "igraph"]
+    analysis_python = find_analysis_python()
+    python_status, python_detail = check_python_packages(analysis_python, packages)
+    rscript = find_rscript()
+    r_status: dict[str, Any] = {"Rscript": rscript, "packages": {}}
+    if rscript:
+        check_expr = (
+            "pkgs <- c('Seurat','SingleR','celldex','clusterProfiler','CellChat','monocle3','harmony'); "
+            "cat(paste(pkgs, vapply(pkgs, requireNamespace, logical(1), quietly=TRUE), sep='=', collapse='\\n'))"
+        )
+        completed, run_log = run_fixed_process(
+            tool="check_runtime_environment_r",
+            job_id=job_id,
+            project_dir=project_dir,
+            command=[rscript, "-e", check_expr],
+            timeout_seconds=120,
+        )
+        r_status["returncode"] = completed.returncode
+        for line in (completed.stdout or "").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                r_status["packages"][key] = value.strip().lower() == "true"
+    else:
+        run_log = project_dir / "logs" / f"check_runtime_environment-{job_id}.log"
+        run_log.parent.mkdir(parents=True, exist_ok=True)
+        run_log.write_text("Rscript not found\n", encoding="utf-8")
+    report = {
+        "time_utc": utc_now(),
+        "server_python": sys.version,
+        "analysis_python": analysis_python,
+        "analysis_python_detail": python_detail,
+        "python_packages": python_status,
+        "r": r_status,
+        "skill_runtime": str(SKILL_RUNTIME_DIR),
+    }
+    out_json = project_dir / "environment_status.json"
+    out_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    warnings = []
+    if not all(python_status.values()):
+        warnings.append("Some Python analysis packages are missing in the analysis Python environment; scanpy_basic optional modules may be limited.")
+    if not rscript:
+        warnings.append("Rscript is not available. Add R >= 4.3 Rscript to PATH or set RSCRIPT.")
+    elif not all(r_status.get("packages", {}).values()):
+        warnings.append("Some R packages required by Seurat/SingleR/CellChat/Monocle3 are missing.")
+    log_file = log_event("check_runtime_environment", job_id, {"project_id": project_id, "warnings": warnings})
+    return response_payload(
+        status="ok" if not warnings else "warning",
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Runtime environment checked.",
+        warnings=warnings,
+        data={"environment_status": str(out_json), **report},
+    )
+
+
+def tool_render_workflow_scripts(
+    project_id: str,
+    input_path: str,
+    species: str = "human",
+    input_type: str = "",
+    metadata_path: str = "",
+    sample_id: str = "",
+    batch_col: str = "",
+    condition_col: str = "",
+    reference_name: str = "",
+) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=True)
+    job_id = uuid.uuid4().hex
+    input_candidate = validate_input_path(input_path)
+    metadata_candidate = validate_optional_input_path(metadata_path)
+    inferred_type = infer_input_type(input_candidate, input_type)
+    if inferred_type not in {"10x_mtx", "10x_h5", "rds", "csv"}:
+        raise ValueError("Seurat workflow supports 10x_mtx, 10x_h5, rds, and csv inputs.")
+    scripts = render_seurat_workflow_scripts(
+        project_dir,
+        input_candidate,
+        input_type=inferred_type,
+        species=species,
+        sample_id=sample_id or safe_slug(project_id),
+        metadata_path=metadata_candidate,
+        batch_col=batch_col,
+        condition_col=condition_col,
+        reference_name=reference_name,
+    )
+    log_file = log_event("render_workflow_scripts", job_id, {"project_id": project_id, "scripts": list(scripts)})
+    return response_payload(
+        status="ok",
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Workflow scripts rendered into the project folder. Downstream CellChat/Monocle3 scripts are approval-gated.",
+        data={"scripts": {key: str(value) for key, value in scripts.items()}},
+    )
+
+
+def tool_run_scanpy_basic(
+    project_id: str,
+    input_path: str,
+    species: str = "human",
+    input_type: str = "",
+    batch_col: str = "",
+    metadata_path: str = "",
+    sample_id: str = "",
+    group_col: str = "",
+    annotation_method: str = "marker_summary",
+    timeout_seconds: int = 3600,
+) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_dir = require_project_dir(project_id, create=True)
     warnings: list[str] = []
@@ -544,22 +1064,85 @@ def tool_run_scanpy_basic(project_id: str, input_path: str, species: str = "huma
             warnings=["All input paths must stay under mcp_server/workspace/inputs."],
         )
     if not candidate.exists():
-        warnings.append("Input path does not exist under workspace/inputs.")
-    if importlib.util.find_spec("scanpy") is None:
-        warnings.append("Python package scanpy is not installed in the current environment.")
-    log_file = log_event("run_scanpy_basic", job_id, {"project_id": project_id, "status": "not_run", "input": str(candidate), "species": species})
+        raise FileNotFoundError("Input path does not exist under workspace/inputs.")
+    if input_type:
+        inferred_type = input_type
+    else:
+        inferred_type = infer_input_type(candidate)
+    if inferred_type not in {"h5ad", "10x_mtx", "10x_h5"}:
+        raise ValueError("Scanpy workflow supports h5ad, 10x_mtx, and 10x_h5 inputs.")
+    metadata_candidate = validate_optional_input_path(metadata_path)
+    analysis_python = find_analysis_python()
+    py_status, py_detail = check_python_packages(analysis_python, ["scanpy", "anndata", "pandas", "numpy", "scipy", "matplotlib", "seaborn", "leidenalg", "igraph"])
+    if not py_status.get("scanpy"):
+        log_file = log_event("run_scanpy_basic", job_id, {"project_id": project_id, "status": "missing_scanpy"})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Python package scanpy is not installed in the analysis Python environment. Create or repair the environment before running scanpy_basic.",
+            warnings=["Required environment: Python >= 3.10 with scanpy/anndata/pandas/numpy/scipy/matplotlib/seaborn/leidenalg/igraph.", f"analysis_python={analysis_python}", f"detail={py_detail}"],
+        )
+    output_dir = project_dir / "scanpy_basic"
+    completed, run_log = run_fixed_process(
+        tool="run_scanpy_basic",
+        job_id=job_id,
+        project_dir=project_dir,
+        command=[
+            analysis_python,
+            str(SERVER_ROOT / "pipelines" / "run_scanpy_basic.py"),
+            "--input-path",
+            str(candidate),
+            "--input-type",
+            inferred_type,
+            "--output-dir",
+            str(output_dir),
+            "--species",
+            species,
+            "--batch-col",
+            batch_col,
+            "--metadata-path",
+            metadata_candidate,
+            "--sample-id",
+            sample_id or safe_slug(project_id),
+            "--group-col",
+            group_col,
+            "--annotation-method",
+            annotation_method,
+        ],
+        timeout_seconds=timeout_seconds,
+        env_extra={"SCMECHANISM_WORKSPACE": str(WORKSPACE_ROOT), "SCMECHANISM_ANALYSIS_PYTHON": analysis_python},
+    )
+    status = "ok" if completed.returncode == 0 else "error"
+    log_file = log_event("run_scanpy_basic", job_id, {"project_id": project_id, "status": status, "returncode": completed.returncode})
     return response_payload(
-        status="error",
+        status=status,
         project_id=safe_slug(project_id),
         job_id=job_id,
         output_dir=project_dir,
         log_file=log_file,
-        message="scanpy_basic is a guarded placeholder in this MCP version; install dependencies and place input under workspace/inputs before enabling execution.",
-        warnings=warnings or ["Execution intentionally disabled in first MCP version; interface validated only."],
+        message="Scanpy basic workflow completed." if status == "ok" else "Scanpy basic workflow failed. Read the run log for details.",
+        warnings=warnings if status == "ok" else warnings + ["See run_log for stdout/stderr."],
+        data={"analysis_python": analysis_python, "run_log": str(run_log), "files": collect_project_files(output_dir)},
     )
 
 
-def tool_run_seurat_basic(project_id: str, input_path: str, species: str = "human") -> dict[str, Any]:
+def tool_run_seurat_basic(
+    project_id: str,
+    input_path: str,
+    species: str = "human",
+    input_type: str = "",
+    metadata_path: str = "",
+    sample_id: str = "",
+    batch_col: str = "",
+    condition_col: str = "",
+    reference_name: str = "",
+    run_annotation: bool = True,
+    run_marker_enrichment: bool = True,
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_dir = require_project_dir(project_id, create=True)
     warnings: list[str] = []
@@ -577,19 +1160,389 @@ def tool_run_seurat_basic(project_id: str, input_path: str, species: str = "huma
             warnings=["All input paths must stay under mcp_server/workspace/inputs."],
         )
     if not candidate.exists():
-        warnings.append("Input path does not exist under workspace/inputs.")
-    if shutil.which("Rscript") is None:
-        warnings.append("Rscript is not on PATH. Install R >= 4.3 and add Rscript to PATH.")
-    warnings.append("Seurat execution is disabled in this first MCP version; use the main skill environment installer before enabling.")
-    log_file = log_event("run_seurat_basic", job_id, {"project_id": project_id, "status": "not_run", "input": str(candidate), "species": species})
+        raise FileNotFoundError("Input path does not exist under workspace/inputs.")
+    rscript = find_rscript()
+    if not rscript:
+        log_file = log_event("run_seurat_basic", job_id, {"project_id": project_id, "status": "missing_rscript"})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Rscript is not available. Install R >= 4.3 and add Rscript to PATH, or set RSCRIPT to Rscript.exe.",
+            warnings=["Use the main skill environment scripts before running Seurat modules."],
+        )
+    metadata_candidate = validate_optional_input_path(metadata_path)
+    inferred_type = infer_input_type(candidate, input_type)
+    if inferred_type not in {"10x_mtx", "10x_h5", "rds", "csv"}:
+        raise ValueError("Seurat workflow supports 10x_mtx, 10x_h5, rds, and csv inputs.")
+    scripts = render_seurat_workflow_scripts(
+        project_dir,
+        candidate,
+        input_type=inferred_type,
+        species=species,
+        sample_id=sample_id or safe_slug(project_id),
+        metadata_path=metadata_candidate,
+        batch_col=batch_col,
+        condition_col=condition_col,
+        reference_name=reference_name,
+    )
+    run_sequence = [("seurat_basic", scripts["seurat_basic"])]
+    if run_annotation:
+        run_sequence.append(("singler_annotation", scripts["singler_annotation"]))
+    if run_marker_enrichment:
+        run_sequence.append(("marker_enrichment", scripts["marker_enrichment"]))
+    run_logs: list[str] = []
+    for step_name, script in run_sequence:
+        completed, run_log = run_fixed_process(
+            tool=step_name,
+            job_id=job_id,
+            project_dir=project_dir,
+            command=[rscript, str(script)],
+            timeout_seconds=timeout_seconds,
+        )
+        run_logs.append(str(run_log))
+        if completed.returncode != 0:
+            log_file = log_event("run_seurat_basic", job_id, {"project_id": project_id, "status": "failed", "step": step_name, "returncode": completed.returncode})
+            return response_payload(
+                status="error",
+                project_id=safe_slug(project_id),
+                job_id=job_id,
+                output_dir=project_dir,
+                log_file=log_file,
+                message=f"Seurat workflow failed at step: {step_name}.",
+                warnings=["Read the step run log for stdout/stderr.", *warnings],
+                data={"failed_step": step_name, "run_logs": run_logs, "files": collect_project_files(project_dir)},
+            )
+    proposal = safe_tool_status("propose_downstream_modules", tool_propose_downstream_modules, project_id=safe_slug(project_id))
+    quality = safe_tool_status("validate_result_bundle", tool_validate_result_bundle, project_id=safe_slug(project_id))
+    log_file = log_event("run_seurat_basic", job_id, {"project_id": project_id, "status": "ok", "steps": [name for name, _ in run_sequence]})
     return response_payload(
-        status="error",
+        status="ok",
         project_id=safe_slug(project_id),
         job_id=job_id,
         output_dir=project_dir,
         log_file=log_file,
-        message="seurat_basic is a guarded placeholder. Install R/Seurat and place input under workspace/inputs before enabling execution.",
-        warnings=warnings,
+        message="Seurat workflow completed through annotation/marker steps. Review downstream_proposal.md before approving CellChat or Monocle3.",
+        warnings=warnings + ["CellChat and Monocle3 are not run automatically. Use approval-gated tools after reviewing the proposal."],
+        data={
+            "run_logs": run_logs,
+            "downstream_proposal_status": proposal.get("status"),
+            "quality_status": quality.get("status"),
+            "files": collect_project_files(project_dir),
+        },
+    )
+
+
+def tool_propose_downstream_modules(project_id: str) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=False)
+    job_id = uuid.uuid4().hex
+    out_md = project_dir / "downstream_proposal.md"
+    completed, run_log = run_fixed_process(
+        tool="propose_downstream_modules",
+        job_id=job_id,
+        project_dir=project_dir,
+        command=[
+            sys.executable,
+            str(skill_runtime_path("scripts/propose_downstream_modules.py")),
+            "--result-dir",
+            str(project_dir),
+            "--out-md",
+            str(out_md),
+        ],
+        timeout_seconds=300,
+    )
+    status = "ok" if completed.returncode == 0 else "error"
+    log_file = log_event("propose_downstream_modules", job_id, {"project_id": project_id, "status": status})
+    return response_payload(
+        status=status,
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Downstream CellChat/Monocle3 proposal generated. User approval is required before running downstream modules." if status == "ok" else "Failed to generate downstream proposal.",
+        warnings=[] if status == "ok" else ["See run_log for stdout/stderr."],
+        data={"proposal_file": str(out_md), "run_log": str(run_log), "proposal": out_md.read_text(encoding="utf-8", errors="replace") if out_md.exists() else ""},
+    )
+
+
+def tool_validate_result_bundle(project_id: str) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=False)
+    job_id = uuid.uuid4().hex
+    out_md = project_dir / "result_quality_check.md"
+    completed, run_log = run_fixed_process(
+        tool="validate_result_bundle",
+        job_id=job_id,
+        project_dir=project_dir,
+        command=[
+            sys.executable,
+            str(skill_runtime_path("scripts/validate_result_bundle.py")),
+            "--result-dir",
+            str(project_dir),
+            "--out-md",
+            str(out_md),
+        ],
+        timeout_seconds=300,
+    )
+    status = "ok" if completed.returncode == 0 else "error"
+    log_file = log_event("validate_result_bundle", job_id, {"project_id": project_id, "status": status})
+    return response_payload(
+        status=status,
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Result bundle validation report generated." if status == "ok" else "Result bundle validation failed.",
+        warnings=[] if status == "ok" else ["See run_log for stdout/stderr."],
+        data={"validation_file": str(out_md), "run_log": str(run_log), "validation": out_md.read_text(encoding="utf-8", errors="replace") if out_md.exists() else ""},
+    )
+
+
+def tool_run_cellchat(
+    project_id: str,
+    approval_token: str,
+    celltype_col: str = "singleR_label",
+    species: str = "human",
+    min_cells: int = 10,
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=False)
+    job_id = uuid.uuid4().hex
+    if approval_token != "APPROVED_CELLCHAT":
+        log_file = log_event("run_cellchat", job_id, {"project_id": project_id, "status": "approval_required"})
+        return response_payload(
+            status="approval_required",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="CellChat requires prior downstream proposal review and explicit user approval.",
+            warnings=["Call propose_downstream_modules first, then call run_cellchat with approval_token='APPROVED_CELLCHAT'."],
+        )
+    rscript = find_rscript()
+    if not rscript:
+        raise FileNotFoundError("Rscript is not available. Add Rscript to PATH or set RSCRIPT.")
+    seurat_rds = project_dir / "singler_annotation" / "objects" / "seurat_singleR_annotated.rds"
+    if not seurat_rds.exists():
+        seurat_rds = project_dir / "seurat_basic" / "objects" / "processed_seurat.rds"
+    if not seurat_rds.exists():
+        raise FileNotFoundError("No processed Seurat RDS found. Run run_seurat_basic first.")
+    script = render_template_file(
+        skill_runtime_path("scripts/course_adapted/03_cellchat_from_seurat.R"),
+        project_dir / "scripts" / "03_cellchat_from_seurat.R",
+        {
+            "SEURAT_RDS": r_path(seurat_rds),
+            "OUTPUT_DIR": r_path(project_dir / "cellchat"),
+            "CELLTYPE_COL": celltype_col,
+            "ORGANISM": species.lower(),
+            "MIN_CELLS": str(min_cells),
+        },
+    )
+    completed, run_log = run_fixed_process(
+        tool="run_cellchat",
+        job_id=job_id,
+        project_dir=project_dir,
+        command=[rscript, str(script)],
+        timeout_seconds=timeout_seconds,
+    )
+    status = "ok" if completed.returncode == 0 else "error"
+    log_file = log_event("run_cellchat", job_id, {"project_id": project_id, "status": status, "returncode": completed.returncode})
+    return response_payload(
+        status=status,
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="CellChat completed." if status == "ok" else "CellChat failed. Read the run log.",
+        warnings=[] if status == "ok" else ["See run_log for stdout/stderr."],
+        data={"run_log": str(run_log), "files": collect_project_files(project_dir / "cellchat")},
+    )
+
+
+def tool_run_monocle3(
+    project_id: str,
+    approval_token: str,
+    celltype_col: str = "singleR_label",
+    subset_query: str = "",
+    root_query: str = "",
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
+    project_dir = require_project_dir(project_id, create=False)
+    job_id = uuid.uuid4().hex
+    if approval_token != "APPROVED_MONOCLE3":
+        log_file = log_event("run_monocle3", job_id, {"project_id": project_id, "status": "approval_required"})
+        return response_payload(
+            status="approval_required",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Monocle3 requires prior downstream proposal review and explicit user approval.",
+            warnings=["Call propose_downstream_modules first, then call run_monocle3 with approval_token='APPROVED_MONOCLE3'."],
+        )
+    rscript = find_rscript()
+    if not rscript:
+        raise FileNotFoundError("Rscript is not available. Add Rscript to PATH or set RSCRIPT.")
+    seurat_rds = project_dir / "singler_annotation" / "objects" / "seurat_singleR_annotated.rds"
+    if not seurat_rds.exists():
+        raise FileNotFoundError("No SingleR-annotated Seurat RDS found. Run run_seurat_basic with annotation first.")
+    script = render_template_file(
+        skill_runtime_path("scripts/course_adapted/04_monocle3_from_seurat.R"),
+        project_dir / "scripts" / "04_monocle3_from_seurat.R",
+        {
+            "SEURAT_RDS": r_path(seurat_rds),
+            "OUTPUT_DIR": r_path(project_dir / "monocle3"),
+            "CELLTYPE_COL": celltype_col,
+            "SUBSET_QUERY": r_string(subset_query),
+            "ROOT_CELLS_FILE": "",
+            "ROOT_QUERY": r_string(root_query),
+            "MAX_CELLS": "8000",
+            "BALANCE_COL": celltype_col,
+            "USE_SEURAT_UMAP": "true",
+            "RANDOM_SEED": "20260702",
+        },
+    )
+    completed, run_log = run_fixed_process(
+        tool="run_monocle3",
+        job_id=job_id,
+        project_dir=project_dir,
+        command=[rscript, str(script)],
+        timeout_seconds=timeout_seconds,
+    )
+    status = "ok" if completed.returncode == 0 else "error"
+    log_file = log_event("run_monocle3", job_id, {"project_id": project_id, "status": status, "returncode": completed.returncode})
+    return response_payload(
+        status=status,
+        project_id=safe_slug(project_id),
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Monocle3 completed." if status == "ok" else "Monocle3 failed. Read the run log.",
+        warnings=[] if status == "ok" else ["See run_log for stdout/stderr."],
+        data={"run_log": str(run_log), "files": collect_project_files(project_dir / "monocle3")},
+    )
+
+
+def tool_run_full_workflow_selftest(project_id: str = "mcp_selftest_full_modules", timeout_seconds: int = 7200) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    project_slug = safe_slug(project_id, "mcp_selftest_full_modules")
+    project_dir = require_project_dir(project_slug, create=True)
+    input_summary = write_selftest_10x_input()
+    steps: list[dict[str, Any]] = []
+
+    seurat = tool_run_seurat_basic(
+        project_id=project_slug,
+        input_path=input_summary["input_path"],
+        species="human",
+        input_type="10x_mtx",
+        metadata_path=input_summary["metadata_path"],
+        sample_id="mcp_selftest",
+        batch_col="batch",
+        condition_col="known_group",
+        reference_name="hpca",
+        run_annotation=True,
+        run_marker_enrichment=True,
+        timeout_seconds=timeout_seconds,
+    )
+    steps.append({"step": "seurat_singler_marker", "status": seurat.get("status"), "message": seurat.get("message")})
+    if seurat.get("status") != "ok":
+        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "seurat_singler_marker"})
+        return response_payload(
+            status="error",
+            project_id=project_slug,
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Full workflow selftest failed at Seurat/SingleR/marker step.",
+            warnings=["Read nested run logs in the project output directory."],
+            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
+        )
+
+    cellchat = tool_run_cellchat(
+        project_id=project_slug,
+        approval_token="APPROVED_CELLCHAT",
+        celltype_col="known_group",
+        species="human",
+        min_cells=10,
+        timeout_seconds=timeout_seconds,
+    )
+    steps.append({"step": "cellchat", "status": cellchat.get("status"), "message": cellchat.get("message")})
+    if cellchat.get("status") != "ok":
+        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "cellchat"})
+        return response_payload(
+            status="error",
+            project_id=project_slug,
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Full workflow selftest failed at CellChat step.",
+            warnings=["Read nested run logs in the project output directory."],
+            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
+        )
+
+    monocle3 = tool_run_monocle3(
+        project_id=project_slug,
+        approval_token="APPROVED_MONOCLE3",
+        celltype_col="known_group",
+        subset_query='known_group %in% c("T_cell","B_cell","Myeloid")',
+        root_query='known_group == "T_cell"',
+        timeout_seconds=timeout_seconds,
+    )
+    steps.append({"step": "monocle3", "status": monocle3.get("status"), "message": monocle3.get("message")})
+    if monocle3.get("status") != "ok":
+        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "monocle3"})
+        return response_payload(
+            status="error",
+            project_id=project_slug,
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Full workflow selftest failed at Monocle3 step.",
+            warnings=["Read nested run logs in the project output directory."],
+            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
+        )
+
+    quality = tool_validate_result_bundle(project_id=project_slug)
+    steps.append({"step": "result_quality", "status": quality.get("status"), "message": quality.get("message")})
+
+    report = project_dir / "full_workflow_selftest_report.md"
+    report.write_text(
+        "\n".join(
+            [
+                "# Local MCP Full Workflow Selftest",
+                "",
+                "## Input",
+                f"- Cells: {input_summary['cells']}",
+                f"- Genes: {input_summary['genes']}",
+                f"- Groups: {', '.join(input_summary['groups'])}",
+                "",
+                "## Step Status",
+                *[f"- {step['step']}: {step['status']} - {step['message']}" for step in steps],
+                "",
+                "## Key Outputs",
+                "- seurat_basic/objects/processed_seurat.rds",
+                "- singler_annotation/objects/seurat_singleR_annotated.rds",
+                "- marker_enrichment/tables/cluster_markers_top.csv",
+                "- marker_enrichment/tables/GO_BP_top_markers.csv",
+                "- cellchat/tables/cellchat_ligand_receptor.csv",
+                "- monocle3/tables/pseudotime.csv",
+                "- result_quality_check.md",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "ok"})
+    return response_payload(
+        status="ok",
+        project_id=project_slug,
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Full local MCP workflow selftest completed.",
+        warnings=["This is a synthetic selftest dataset and is not biological evidence."],
+        data={"input": input_summary, "steps": steps, "report": str(report), "files": collect_project_files(project_dir)},
     )
 
 
@@ -695,28 +1648,53 @@ def tool_download_to_workspace(url: str, relative_path: str, overwrite: bool = F
     if path.exists() and not overwrite:
         raise FileExistsError("File exists. Set overwrite=true to replace it.")
     max_bytes = max(1, min(int(max_bytes), MAX_DOWNLOAD_BYTES))
-    request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
     path.parent.mkdir(parents=True, exist_ok=True)
     total = 0
-    with urlopen(request, timeout=60) as response, path.open("wb") as handle:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
+    expected_size: int | None = None
+    attempts = 3
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        total = 0
+        request = Request(safe_url, headers={"User-Agent": "scMechanism-local-mcp/0.1"})
+        try:
+            with urlopen(request, timeout=120) as response, path.open("wb") as handle:
+                content_length = response.headers.get("Content-Length")
+                expected_size = int(content_length) if content_length and content_length.isdigit() else None
+                if expected_size is not None and expected_size > max_bytes:
+                    handle.close()
+                    path.unlink(missing_ok=True)
+                    raise ValueError(f"Download exceeds max_bytes={max_bytes}; remote size={expected_size}")
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        handle.close()
+                        path.unlink(missing_ok=True)
+                        raise ValueError(f"Download exceeds max_bytes={max_bytes}")
+                    handle.write(chunk)
+            if expected_size is None or total == expected_size:
                 break
-            total += len(chunk)
-            if total > max_bytes:
-                handle.close()
-                path.unlink(missing_ok=True)
-                raise ValueError(f"Download exceeds max_bytes={max_bytes}")
-            handle.write(chunk)
-    log_file = log_event("download_to_workspace", job_id, {"url": safe_url, "relative_path": relative_path, "bytes": total})
+            last_error = f"incomplete download: got {total} bytes, expected {expected_size}"
+            path.unlink(missing_ok=True)
+        except Exception as exc:
+            last_error = str(exc)
+            path.unlink(missing_ok=True)
+        if attempt < attempts:
+            time.sleep(2 * attempt)
+    if expected_size is not None and total != expected_size:
+        raise ValueError(last_error or f"incomplete download: got {total} bytes, expected {expected_size}")
+    if not path.exists():
+        raise ValueError(last_error or "download failed")
+    log_file = log_event("download_to_workspace", job_id, {"url": safe_url, "relative_path": relative_path, "bytes": total, "expected_size": expected_size})
     return response_payload(
         status="ok",
         job_id=job_id,
         output_dir=path.parent,
         log_file=log_file,
         message="Downloaded file into workspace.",
-        data={"path": workspace_relative(path), "size": total},
+        data={"path": workspace_relative(path), "size": total, "expected_size": expected_size},
     )
 
 
@@ -755,15 +1733,20 @@ def tool_run_workspace_python(
     env["SCMECHANISM_PROJECT_DIR"] = str(project_dir)
     env["SCMECHANISM_LOGS"] = str(LOGS_DIR)
     env["PYTHONIOENCODING"] = "utf-8"
+    analysis_python = find_analysis_python()
     completed = subprocess.run(
-        [sys.executable, str(script), *safe_args],
+        [analysis_python, str(script), *safe_args],
         cwd=WORKSPACE_ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         timeout=timeout_seconds,
         shell=False,
     )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
     run_log = project_dir / "logs" / f"run_workspace_python-{job_id}.log"
     run_log.parent.mkdir(parents=True, exist_ok=True)
     run_log.write_text(
@@ -771,9 +1754,10 @@ def tool_run_workspace_python(
             {
                 "time": utc_now(),
                 "script": workspace_relative(script),
+                "python": analysis_python,
                 "returncode": completed.returncode,
-                "stdout": completed.stdout[-10000:],
-                "stderr": completed.stderr[-10000:],
+                "stdout": stdout[-10000:],
+                "stderr": stderr[-10000:],
             },
             ensure_ascii=False,
             indent=2,
@@ -791,9 +1775,10 @@ def tool_run_workspace_python(
         warnings=[] if completed.returncode == 0 else ["See stdout/stderr in data and project log."],
         data={
             "script": workspace_relative(script),
+            "python": analysis_python,
             "returncode": completed.returncode,
-            "stdout": completed.stdout[-10000:],
-            "stderr": completed.stderr[-10000:],
+            "stdout": stdout[-10000:],
+            "stderr": stderr[-10000:],
             "run_log": workspace_relative(run_log),
         },
     )
@@ -852,8 +1837,17 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "run_demo_pipeline": tool_run_demo_pipeline,
     "list_result_files": tool_list_result_files,
     "read_report": tool_read_report,
+    "list_skill_runtime_files": tool_list_skill_runtime_files,
+    "read_skill_runtime_file": tool_read_skill_runtime_file,
+    "check_runtime_environment": tool_check_runtime_environment,
+    "render_workflow_scripts": tool_render_workflow_scripts,
     "run_scanpy_basic": tool_run_scanpy_basic,
     "run_seurat_basic": tool_run_seurat_basic,
+    "propose_downstream_modules": tool_propose_downstream_modules,
+    "validate_result_bundle": tool_validate_result_bundle,
+    "run_cellchat": tool_run_cellchat,
+    "run_monocle3": tool_run_monocle3,
+    "run_full_workflow_selftest": tool_run_full_workflow_selftest,
     "list_workspace_files": tool_list_workspace_files,
     "read_workspace_file": tool_read_workspace_file,
     "write_workspace_file": tool_write_workspace_file,
@@ -869,8 +1863,17 @@ TOOL_SCHEMAS = [
     {"name": "run_demo_pipeline", "description": "Generate lightweight synthetic result files without private data.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "list_result_files", "description": "List files under one project output directory.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "read_report", "description": "Read report_skeleton.md from one project.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
-    {"name": "run_scanpy_basic", "description": "Guarded placeholder for Scanpy execution.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}}, "required": ["project_id", "input_path"]}},
-    {"name": "run_seurat_basic", "description": "Guarded placeholder for Seurat execution.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}}, "required": ["project_id", "input_path"]}},
+    {"name": "list_skill_runtime_files", "description": "List read-only copied Skill assets: agents, references, workflows, templates, and course scripts.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 300}}}},
+    {"name": "read_skill_runtime_file", "description": "Read a read-only copied Skill runtime file.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
+    {"name": "check_runtime_environment", "description": "Check Python and R package readiness for Scanpy, Seurat, SingleR, CellChat, and Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "environment_check"}}}},
+    {"name": "render_workflow_scripts", "description": "Render Seurat, SingleR, marker, CellChat, and Monocle3 scripts into a project without running them.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}}, "required": ["project_id", "input_path"]}},
+    {"name": "run_scanpy_basic", "description": "Run the whitelisted Scanpy QC, clustering, metadata/default-group, annotation-evidence, marker, enrichment, and figure pipeline.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "group_col": {"type": "string", "default": ""}, "annotation_method": {"type": "string", "default": "marker_summary"}, "timeout_seconds": {"type": "integer", "default": 3600}}, "required": ["project_id", "input_path"]}},
+    {"name": "run_seurat_basic", "description": "Run whitelisted Seurat V5 core pipeline, SingleR annotation, marker/enrichment, validation, and downstream proposal.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}, "run_annotation": {"type": "boolean", "default": True}, "run_marker_enrichment": {"type": "boolean", "default": True}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "input_path"]}},
+    {"name": "propose_downstream_modules", "description": "Generate downstream_proposal.md from upstream annotation and marker results before CellChat/Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
+    {"name": "validate_result_bundle", "description": "Generate result_quality_check.md from project outputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
+    {"name": "run_cellchat", "description": "Run CellChat only after explicit approval_token='APPROVED_CELLCHAT'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "species": {"type": "string", "default": "human"}, "min_cells": {"type": "integer", "default": 10}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
+    {"name": "run_monocle3", "description": "Run Monocle3 only after explicit approval_token='APPROVED_MONOCLE3'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "subset_query": {"type": "string", "default": ""}, "root_query": {"type": "string", "default": ""}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
+    {"name": "run_full_workflow_selftest", "description": "Run a fixed synthetic local MCP selftest through Seurat, SingleR, marker enrichment, CellChat, Monocle3, and result QC.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "mcp_selftest_full_modules"}, "timeout_seconds": {"type": "integer", "default": 7200}}}},
     {"name": "list_workspace_files", "description": "List files under the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 200}}}},
     {"name": "read_workspace_file", "description": "Read a text or base64-encoded file from the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
     {"name": "write_workspace_file", "description": "Write text or base64 content into the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string", "default": ""}, "content_base64": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}}, "required": ["relative_path"]}},

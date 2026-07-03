@@ -1,9 +1,0 @@
-Seurat object: submission/example/results/gse223751_seurat/objects/gse223751_processed_seurat.rds
-Cells in trajectory: 5000
-Genes: 21187
-Subset query: marker_support_label %in% c('tenocyte_fibroblast', 'chondrocyte', 'osteoblast', 'cycling')
-Max cells: 5000
-Balance column: marker_support_label
-Use Seurat UMAP: TRUE
-Finite pseudotime cells: 5000
-Unique finite pseudotime values: 4537

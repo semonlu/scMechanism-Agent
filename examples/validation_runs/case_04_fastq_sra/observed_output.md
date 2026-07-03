@@ -1,6 +1,0 @@
-- Detected formats: FASTQ/SRA raw reads.
-- Direct downstream analysis: no.
-- FASTQ rebuild required: True.
-- Recommended reading: Do not run downstream Seurat/Scanpy directly; first rebuild matrices with Cell Ranger, STARsolo, kallisto-bustools, or alevin-fry.
-- Major risks: Sample metadata/group design not detected.; Raw-read reconstruction requires reference genome, chemistry, and compute resources..
-- Interpretation: SRR/FASTQ cannot directly enter Seurat/Scanpy downstream analysis; expression matrices must be generated first.

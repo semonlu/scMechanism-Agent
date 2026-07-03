@@ -17,7 +17,6 @@ renv/library/
 # Generated analysis outputs and large objects
 analysis/
 dist/
-submission/example/data/
 seuratv5_environment_check/
 seuratv5_r_package_check.tsv
 *.rds
@@ -33,3 +32,21 @@ seuratv5_r_package_check.tsv
 tmp/
 temp/
 docs/superpowers/
+
+# Local MCP runtime mirrors and sandbox data
+mcp_server/skill_runtime/
+mcp_server/workspace/**
+!mcp_server/workspace/
+!mcp_server/workspace/code/
+!mcp_server/workspace/code/.gitkeep
+!mcp_server/workspace/inputs/
+!mcp_server/workspace/inputs/.gitkeep
+!mcp_server/workspace/logs/
+!mcp_server/workspace/logs/.gitkeep
+!mcp_server/workspace/logs/.gitignore
+!mcp_server/workspace/outputs/
+!mcp_server/workspace/outputs/.gitkeep
+!mcp_server/workspace/outputs/.gitignore
+!mcp_server/workspace/runtime/
+!mcp_server/workspace/runtime/.gitkeep
+!mcp_server/workspace/runtime/.gitignore

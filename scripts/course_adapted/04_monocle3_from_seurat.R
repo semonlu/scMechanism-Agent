@@ -151,9 +151,10 @@ p2_graph <- plot_cells(
 )
 ggsave(file.path(output_dir, "figures", "trajectory_celltypes_with_graph.pdf"), p2_graph, width = 7, height = 6)
 
+p3_color <- if ("stage" %in% colnames(colData(cds))) "stage" else celltype_col
 p3 <- plot_cells(
   cds,
-  color_cells_by = "stage",
+  color_cells_by = p3_color,
   label_cell_groups = FALSE,
   label_leaves = FALSE,
   label_branch_points = FALSE,

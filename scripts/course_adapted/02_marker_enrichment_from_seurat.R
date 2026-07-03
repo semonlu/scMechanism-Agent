@@ -1,8 +1,6 @@
 #!/usr/bin/env Rscript
 
-# Adapted from course modules:
-# - 17.多种算法计算marker基因/多种算法计算marker基因.R
-# - 18.GO_KEGG/GO_KEGG.r
+# Course-adapted marker detection and optional GO/KEGG enrichment.
 
 suppressPackageStartupMessages({
   library(Seurat)
@@ -37,10 +35,15 @@ markers <- FindAllMarkers(
 )
 write.csv(markers, file.path(output_dir, "tables", "cluster_markers_all.csv"), row.names = FALSE)
 
-top_markers <- markers %>%
-  group_by(cluster) %>%
-  slice_max(order_by = avg_log2FC, n = top_n, with_ties = FALSE) %>%
-  ungroup()
+if (nrow(markers) == 0) {
+  top_markers <- markers
+} else {
+  score_col <- if ("avg_log2FC" %in% colnames(markers)) "avg_log2FC" else if ("avg_logFC" %in% colnames(markers)) "avg_logFC" else "pct.1"
+  top_markers <- markers %>%
+    group_by(cluster) %>%
+    slice_max(order_by = .data[[score_col]], n = top_n, with_ties = FALSE) %>%
+    ungroup()
+}
 write.csv(top_markers, file.path(output_dir, "tables", "cluster_markers_top.csv"), row.names = FALSE)
 
 status <- c(
@@ -59,12 +62,18 @@ can_org <- requireNamespace(org_pkg, quietly = TRUE)
 if (can_enrich && can_org) {
   OrgDb <- getExportedValue(org_pkg, org_pkg)
   genes <- unique(top_markers$gene)
-  gene_map <- clusterProfiler::bitr(
-    genes,
-    fromType = "SYMBOL",
-    toType = "ENTREZID",
-    OrgDb = OrgDb
-  )
+  gene_map <- data.frame()
+  if (length(genes) > 0) {
+    gene_map <- tryCatch(
+      clusterProfiler::bitr(
+        genes,
+        fromType = "SYMBOL",
+        toType = "ENTREZID",
+        OrgDb = OrgDb
+      ),
+      error = function(e) data.frame()
+    )
+  }
 
   if (nrow(gene_map) > 0) {
     go <- clusterProfiler::enrichGO(

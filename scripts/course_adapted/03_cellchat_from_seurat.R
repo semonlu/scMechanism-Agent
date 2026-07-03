@@ -23,6 +23,13 @@ stopifnot(celltype_col %in% colnames(obj@meta.data))
 tab <- table(obj[[celltype_col]][, 1])
 keep_groups <- names(tab)[tab >= min_cells]
 obj <- subset(obj, cells = rownames(obj@meta.data)[obj[[celltype_col]][, 1] %in% keep_groups])
+tab <- table(obj[[celltype_col]][, 1])
+if (length(tab) < 2) {
+  stop(
+    "CellChat requires at least 2 cell groups after min_cells filtering. ",
+    "Lower MIN_CELLS or choose a celltype_col with at least two sufficiently sized groups."
+  )
+}
 
 data.input <- GetAssayData(obj, assay = "RNA", layer = "data")
 meta <- data.frame(cell_type = obj[[celltype_col]][, 1], row.names = colnames(obj))

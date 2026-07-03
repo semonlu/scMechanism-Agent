@@ -5,9 +5,9 @@ This skill is for public or locally owned single-cell research workflows and hyp
 ## Data Handling
 
 - Do not upload private patient-level clinical records, protected health information, API keys, tokens, or institutional secrets.
-- Do not include raw FASTQ/SRA data, expression matrices, h5ad/loom files, Seurat RDS objects, or large private result tables in the platform upload zip.
+- Do not include raw FASTQ/SRA data, expression matrices, h5ad/loom files, Seurat RDS objects, or large private result tables in the repository.
 - Keep heavy computation and private data on the user's local machine, institutional server, or approved compute environment.
-- Use the platform Skill to guide format diagnosis, workflow planning, script generation, result review, and report drafting.
+- Use the Skill to guide format diagnosis, workflow planning, script generation, result review, and report drafting.
 
 ## Biological and Clinical Limits
 
@@ -20,13 +20,6 @@ This skill is for public or locally owned single-cell research workflows and hyp
 - Do not send private matrices or identifiable clinical metadata to external LLM/API services.
 - If an MCP or online search tool is used, use it for public metadata, documentation, literature, and accession lookup rather than private data transfer.
 
-## Upload Package
+## Repository Hygiene
 
-Generate the platform upload package with:
-
-```powershell
-python scripts/package_platform_skill.py --skill-root . --out dist/scMechanism-Agent-skill.zip
-```
-
-The package script excludes Git metadata, local data folders, generated caches, RDS/h5ad/loom/mtx objects, and full local analysis outputs.
-
+Keep generated local data, result folders, large matrices, credentials, and private metadata out of version control. Share only scripts, templates, references, and small non-sensitive examples.

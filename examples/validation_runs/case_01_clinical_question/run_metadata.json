@@ -1,9 +1,0 @@
-{
-  "triggered": [
-    "agents/01_clinical_question_parser.md",
-    "agents/03_analysis_plan_generator.md",
-    "references/clinical_translation_rules.md",
-    "references/seurat_pipeline_rules.md"
-  ],
-  "status": "pass"
-}

@@ -1,8 +1,0 @@
-﻿tool	available	path
-Rscript	True	E:\R-4.4.2\bin\Rscript.exe
-R	True
-Rtools make	True	E:\rtools44\usr\bin\make.exe
-gzip	True	C:\Program Files\Git\usr\bin\gzip.exe
-conda	True	C:\ProgramData\miniconda3\Scripts\conda.exe
-JAGS	True	C:\Program Files\JAGS\JAGS-4.3.1\x64\bin\jags-terminal.exe
-R version	True	4.4.2

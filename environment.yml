@@ -17,7 +17,7 @@ dependencies:
   - pip:
       - celltypist
       - gseapy
-      - harmonypy
+      - harmonypy==0.0.10
       - bbknn
       - scanorama
       - liana

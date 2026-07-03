@@ -5,7 +5,13 @@ server:
   health_endpoint: "/health"
   sse_endpoint: "/sse"
 
+runtime:
+  analysis_python: "C:/ProgramData/miniconda3/envs/seuratv5-course-py/python.exe"
+  python_env_name: "seuratv5-course-py"
+  rscript: "E:/R-4.4.2/bin/Rscript.exe"
+
 workspace:
+  skill_runtime_dir: "skill_runtime"
   inputs_dir: "workspace/inputs"
   outputs_dir: "workspace/outputs"
   logs_dir: "workspace/logs"
@@ -24,6 +30,32 @@ tools:
   - run_demo_pipeline
   - list_result_files
   - read_report
+  - list_skill_runtime_files
+  - read_skill_runtime_file
+  - check_runtime_environment
+  - render_workflow_scripts
   - run_scanpy_basic
   - run_seurat_basic
+  - propose_downstream_modules
+  - validate_result_bundle
+  - run_cellchat
+  - run_monocle3
+  - list_workspace_files
+  - read_workspace_file
+  - write_workspace_file
+  - download_to_workspace
+  - run_workspace_python
 
+workflow:
+  seurat_full:
+    order:
+      - render_workflow_scripts
+      - run_seurat_basic
+      - validate_result_bundle
+      - propose_downstream_modules
+      - user_approval_required
+      - run_cellchat
+      - run_monocle3
+    approval_tokens:
+      cellchat: "APPROVED_CELLCHAT"
+      monocle3: "APPROVED_MONOCLE3"

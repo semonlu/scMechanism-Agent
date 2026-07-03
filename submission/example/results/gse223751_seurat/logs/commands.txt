@@ -1,4 +1,0 @@
-Rscript submission/example/scripts/03_run_gse223751_seurat.R ^
-  --input-dir submission/example/data/processed/10x_by_sample ^
-  --metadata submission/example/metadata/gse223751_sample_metadata.csv ^
-  --output-dir submission/example/results/gse223751_seurat

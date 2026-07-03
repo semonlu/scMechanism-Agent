@@ -18,6 +18,15 @@ mcp_server/
   local_mcp_server.py
   config.yaml
   README_LOCAL_MCP.md
+  skill_runtime/
+    SKILL.md
+    agents/
+    references/
+    templates/
+    scripts/
+      course_source/
+      course_adapted/
+      env_setup/
   pipelines/
     run_demo_pipeline.py
     run_scanpy_basic.py
@@ -32,6 +41,8 @@ mcp_server/
     runtime/
 ```
 
+`skill_runtime/` is a copied local runtime mirror of the public Skill assets. It contains agents, references, workflow documents, templates, environment notes, cleaned course-source scripts, and runnable course-adapted scripts. The MCP server exposes this directory as read-only tools so the platform can inspect the workflow logic, while execution remains limited to whitelisted tools.
+
 ## Create A Conda Environment
 
 ```powershell
@@ -39,13 +50,33 @@ conda create -n scmechanism-mcp python=3.10 -y
 conda activate scmechanism-mcp
 ```
 
-The first MCP version only needs the Python standard library for the server and demo pipeline. Install optional scientific packages only when you are ready to enable real local execution:
+The MCP server itself only needs the Python standard library. The Scanpy workflow should run in a scientific Python environment. This repository uses the existing course environment by default:
 
 ```powershell
-pip install scanpy pandas numpy scipy matplotlib seaborn
+conda activate seuratv5-course-py
+python -m pip install scanpy anndata pandas numpy scipy matplotlib seaborn celltypist gseapy bbknn scanorama harmonypy==0.0.10 liana leidenalg igraph
 ```
 
-For Seurat execution, install R >= 4.3, add `Rscript` to PATH, and install Seurat packages using the main skill environment scripts.
+By default the MCP server looks for:
+
+```text
+C:\ProgramData\miniconda3\envs\seuratv5-course-py\python.exe
+```
+
+You can override this without changing code:
+
+```powershell
+$env:SCMECHANISM_PYTHON = "C:\ProgramData\miniconda3\envs\seuratv5-course-py\python.exe"
+python .\mcp_server\local_mcp_server.py --host 127.0.0.1 --port 8765
+```
+
+For Seurat execution, install R >= 4.3, add `Rscript` to PATH, and install Seurat packages using the main skill environment scripts:
+
+```powershell
+.\scripts\env_setup\install_environment.ps1
+```
+
+The local MCP can find `Rscript` from PATH, from the `RSCRIPT` environment variable, or from common Windows R locations such as `E:\R-4.4.2\bin\Rscript.exe`.
 
 ## Start The Local MCP Server
 
@@ -206,15 +237,76 @@ https://example-random.trycloudflare.com/health
 - `run_demo_pipeline(project_id: str)`
 - `list_result_files(project_id: str)`
 - `read_report(project_id: str)`
-- `run_scanpy_basic(project_id: str, input_path: str, species: str = "human")`
-- `run_seurat_basic(project_id: str, input_path: str, species: str = "human")`
+- `list_skill_runtime_files(relative_path: str = "", max_files: int = 300)`
+- `read_skill_runtime_file(relative_path: str, max_bytes: int = 1000000)`
+- `check_runtime_environment(project_id: str = "environment_check")`
+- `render_workflow_scripts(project_id: str, input_path: str, species: str = "human", input_type: str = "", metadata_path: str = "", sample_id: str = "", batch_col: str = "", condition_col: str = "", reference_name: str = "")`
+- `run_scanpy_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", batch_col: str = "", metadata_path: str = "", sample_id: str = "", group_col: str = "", annotation_method: str = "marker_summary", timeout_seconds: int = 3600)`
+- `run_seurat_basic(project_id: str, input_path: str, species: str = "human", input_type: str = "", metadata_path: str = "", sample_id: str = "", batch_col: str = "", condition_col: str = "", reference_name: str = "", run_annotation: bool = true, run_marker_enrichment: bool = true, timeout_seconds: int = 7200)`
+- `propose_downstream_modules(project_id: str)`
+- `validate_result_bundle(project_id: str)`
+- `run_cellchat(project_id: str, approval_token: str, celltype_col: str = "singleR_label", species: str = "human", min_cells: int = 10, timeout_seconds: int = 7200)`
+- `run_monocle3(project_id: str, approval_token: str, celltype_col: str = "singleR_label", subset_query: str = "", root_query: str = "", timeout_seconds: int = 7200)`
 - `list_workspace_files(relative_path: str = "", max_files: int = 200)`
 - `read_workspace_file(relative_path: str, max_bytes: int = 1000000)`
 - `write_workspace_file(relative_path: str, content: str = "", content_base64: str = "", overwrite: bool = false)`
 - `download_to_workspace(url: str, relative_path: str, overwrite: bool = false, max_bytes: int = 100000000)`
 - `run_workspace_python(project_id: str, script_path: str, args: list[str] = [], timeout_seconds: int = 120)`
 
-`run_scanpy_basic` and `run_seurat_basic` are guarded placeholders in the first version. They validate input location and dependencies, then return clear JSON errors if dependencies or inputs are missing.
+`run_scanpy_basic` now runs a guarded Scanpy workflow for `h5ad`, `10x_mtx`, or `10x_h5` inputs under `workspace/inputs/`. It uses the analysis Python detected by `SCMECHANISM_PYTHON` or the default `seuratv5-course-py` environment. If no metadata is supplied for a 10x folder, it creates default `sample_id`, `group`, and `batch` columns so downstream marker and review steps still have a stable grouping column. If metadata is supplied, pass `metadata_path` under `workspace/inputs/`; row names, `cell`, or `barcode` are matched to cell barcodes. It writes QC metrics, UMAP figures, marker tables, annotation-evidence tables, optional enrichment, logs, and a processed h5ad under `workspace/outputs/<project_id>/scanpy_basic/`.
+
+`run_seurat_basic` now renders and runs the copied course-adapted Seurat V5 workflow:
+
+1. `01_seurat_v5_core_pipeline.R`
+2. `05_singler_cell_annotation.R`
+3. `02_marker_enrichment_from_seurat.R`
+4. `validate_result_bundle.py`
+5. `propose_downstream_modules.py`
+
+It does not automatically run CellChat or Monocle3.
+
+## Required Downstream Approval Gate
+
+CellChat and pseudotime/Monocle3 must not run immediately after clustering. The MCP first generates:
+
+```text
+workspace/outputs/<project_id>/downstream_proposal.md
+```
+
+The user should review the proposed microenvironment, target cell lineages, cell type column, root/state assumptions, and warnings. Only then call:
+
+```text
+run_cellchat(..., approval_token="APPROVED_CELLCHAT")
+run_monocle3(..., approval_token="APPROVED_MONOCLE3")
+```
+
+Without the matching approval token, both tools return `approval_required` and do not run.
+
+## Minimal Local Workflow
+
+1. Put data under `mcp_server/workspace/inputs/`.
+2. Create a project:
+
+```text
+create_project(project_name="case01")
+```
+
+3. Check packages:
+
+```text
+check_runtime_environment(project_id="case01")
+```
+
+4. Run Seurat or Scanpy:
+
+```text
+run_seurat_basic(project_id="case01", input_path="my_10x_folder", input_type="10x_mtx", species="human")
+run_scanpy_basic(project_id="case01", input_path="processed.h5ad", input_type="h5ad", species="human")
+run_scanpy_basic(project_id="case02", input_path="sample_10x", input_type="10x_mtx", species="human", sample_id="sample_10x")
+```
+
+5. Read `downstream_proposal.md`.
+6. If approved, run CellChat or Monocle3 with the required approval token.
 
 ## Workspace File Sandbox
 

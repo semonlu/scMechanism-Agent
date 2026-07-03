@@ -79,7 +79,6 @@ python scripts/validate_result_bundle.py --result-dir analysis/GSE --out-md resu
 python scripts/propose_downstream_modules.py --result-dir analysis/GSE --out-md analysis/GSE/downstream_proposal.md
 python scripts/write_analysis_report.py --result-dir analysis/GSE --metadata-json analysis/GSE/report_metadata.json --out-md analysis/GSE/manuscript_report.md
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/GSE --out-md analysis/GSE/full_workflow_validation.md
-python scripts/validate_platform_skill.py --skill-root .
 ```
 
 Environment preparation:
@@ -122,35 +121,6 @@ CellChat and Monocle3 are approval-gated. First run annotation review and genera
 
 The skill keeps data diagnosis, planning, code generation, execution, validation, and interpretation as separate steps. Heavy computation remains external and auditable; the skill coordinates the steps and produces reproducible scripts and review artifacts.
 
-## Validation Cases
+## Validation
 
-See `examples/` for cases covering:
-
-1. Clinical question only.
-2. 10x MEX files.
-3. h5ad/H5 files.
-4. Seurat RDS files.
-5. FASTQ/SRA only.
-6. Uploaded marker tables.
-7. Uploaded CellChat results.
-
-For the Medical AI Skill platform submission requirement, use:
-
-- `examples/validation_input_output_comparison.md`: at least 5 fixed input-output comparison cases.
-- `references/platform-submission-checklist.md`: upload structure and exclusion rules from the platform manual.
-- `submission/platform/`: concise reviewer-facing materials.
-- `SECURITY_AND_PRIVACY.md`: safety, privacy, and data handling boundaries.
-- `scripts/validate_platform_skill.py`: local structure and validation-evidence check.
-
-## Packaging
-
-Do not upload a raw repository zip to the platform. The repository contains GitHub documentation and optional full-run example outputs that are useful for development but too large/noisy for a platform Skill upload.
-
-Create the platform upload package with the allowlisted packaging script:
-
-```powershell
-python .\scripts\validate_platform_skill.py --skill-root .
-python .\scripts\package_platform_skill.py --skill-root . --out .\dist\scMechanism-Agent-skill.zip
-```
-
-The resulting archive contains the uploadable skill folder with `SKILL.md`, `README.md`, `agents/`, `references/`, `examples/`, `scripts/`, `templates/`, `submission/platform/`, and `SECURITY_AND_PRIVACY.md`. It excludes `.git/`, local data, generated caches, Seurat RDS objects, and full analysis output folders that should not be uploaded accidentally.
+Use `scripts/validate_full_workflow.py` against a local analysis folder when you need to check that generated outputs are complete enough for review. Keep large matrices, generated analysis folders, and private metadata out of the repository.

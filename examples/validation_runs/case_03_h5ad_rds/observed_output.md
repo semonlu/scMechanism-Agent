@@ -1,5 +1,0 @@
-- Detected formats: AnnData h5ad, R/Seurat object.
-- Direct downstream analysis: yes.
-- Recommended reading: Use scanpy.read_h5ad; verify raw counts/layers before differential expression.; Use readRDS/load and inspect class, assays, layers, reductions, and metadata.
-- Major risks: Sample metadata/group design not detected.; Processed objects may not retain raw counts needed for DE, CellChat, CNV, or deconvolution..
-- Interpretation: h5ad should enter the Scanpy route; RDS should enter the R/Seurat route; both require raw-count/layer and metadata audits before DE or mechanism claims.

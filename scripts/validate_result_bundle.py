@@ -11,6 +11,8 @@ from pathlib import Path
 
 EXPECTED = {
     "metadata": ["metadata", "meta"],
+    "data_manifest": ["data_input_manifest"],
+    "data_qc": ["data_analysis_qc"],
     "markers": ["marker", "findallmarkers"],
     "annotation": ["annotation_evidence", "singler", "celltypist", "cell_labels"],
     "deg": ["deg", "differential"],
@@ -98,6 +100,18 @@ def main() -> None:
 
     risks: list[str] = []
     support: list[str] = []
+    if not found["data_manifest"]:
+        risks.append("No data_input_manifest.json detected; analysis input provenance is incomplete.")
+    else:
+        support.append("data_input_manifest.json detected.")
+    if not found["data_qc"]:
+        risks.append("No data_analysis_qc.md detected; cannot confirm that analyzed input matches the planned/downloaded/registered dataset.")
+    else:
+        qc_text = "\n".join(p.read_text(encoding="utf-8", errors="replace")[:4000] for p in found["data_qc"])
+        if "Status: error" in qc_text or "does not match" in qc_text:
+            risks.append("data_analysis_qc.md indicates an input mismatch; results should not be interpreted.")
+        else:
+            support.append("data_analysis_qc.md detected without an obvious input mismatch flag.")
     metadata_files = found["metadata"]
     if not metadata_files:
         risks.append("No metadata table detected; group/batch/sample-level interpretation is limited.")
@@ -138,6 +152,7 @@ def main() -> None:
         "# Result Quality Check",
         "",
         f"- Overall quality: {quality}",
+        f"- Data synchronization status: {'present' if found['data_qc'] else 'missing'}",
         f"- Cell annotation status: {ann_status}",
         f"- Allow CellChat/pseudotime proposal: {'yes' if downstream_allowed else 'no'}",
         "",

@@ -15,4 +15,4 @@ The expected Seurat V5 course order is: import/object construction -> QC -> firs
 
 The Python scripts in the parent `scripts/` folder are helper controllers for GEO diagnosis, planning, template rendering, result checking, and codebase summaries. They do not replace these R analysis scripts.
 
-`templates/` contains generic reusable templates for non-course workflows or lightweight platform demonstrations. `scripts/course_adapted/` contains course-traced runnable modules and should be preferred for Seurat V5 course-derived analyses.
+`templates/` contains generic reusable templates for non-course workflows. `scripts/course_adapted/` contains course-traced runnable modules and should be preferred for Seurat V5 course-derived analyses.

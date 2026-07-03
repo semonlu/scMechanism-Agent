@@ -24,6 +24,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import uuid
 import zipfile
@@ -44,6 +45,7 @@ OUTPUTS_DIR = WORKSPACE_ROOT / "outputs"
 LOGS_DIR = WORKSPACE_ROOT / "logs"
 CODE_DIR = WORKSPACE_ROOT / "code"
 RUNTIME_DIR = WORKSPACE_ROOT / "runtime"
+JOBS_DIR = LOGS_DIR / "jobs"
 DEFAULT_ANALYSIS_PYTHON = r"C:\ProgramData\miniconda3\envs\seuratv5-course-py\python.exe"
 
 PIPELINES = [
@@ -57,6 +59,7 @@ PIPELINES = [
     "monocle3",
     "report_skeleton",
     "geo_download",
+    "async_jobs",
 ]
 
 SYNTHETIC_TEST_PIPELINES = [
@@ -117,7 +120,7 @@ def utc_now() -> str:
 
 
 def ensure_workspace() -> None:
-    for path in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR, CODE_DIR, RUNTIME_DIR]:
+    for path in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR, CODE_DIR, RUNTIME_DIR, JOBS_DIR]:
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -467,6 +470,120 @@ def response_payload(
         "warnings": warnings or [],
         "data": data or {},
     }
+
+
+JOB_LOCK = threading.Lock()
+
+
+def job_record_path(job_id: str) -> Path:
+    job_slug = safe_slug(job_id, "job")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", job_slug):
+        raise ValueError("Invalid job_id")
+    return JOBS_DIR / f"{job_slug}.json"
+
+
+def job_text_log_path(job_id: str) -> Path:
+    job_slug = safe_slug(job_id, "job")
+    return JOBS_DIR / f"{job_slug}.log"
+
+
+def write_job_record(record: dict[str, Any]) -> None:
+    ensure_workspace()
+    record_path = job_record_path(record["job_id"])
+    tmp_path = record_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(record_path)
+
+
+def read_job_record(job_id: str) -> dict[str, Any]:
+    record_path = job_record_path(job_id)
+    if not record_path.exists():
+        raise FileNotFoundError(f"Job not found: {job_id}")
+    return json.loads(record_path.read_text(encoding="utf-8"))
+
+
+def append_job_text_log(job_id: str, message: str) -> Path:
+    ensure_workspace()
+    path = job_text_log_path(job_id)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{utc_now()}] {message}\n")
+    return path
+
+
+def update_job_record(job_id: str, **updates: Any) -> dict[str, Any]:
+    with JOB_LOCK:
+        record = read_job_record(job_id)
+        record.update(updates)
+        record["updated_utc"] = utc_now()
+        write_job_record(record)
+        return record
+
+
+def run_background_tool(job_id: str, tool_name: str, fn: Callable[..., dict[str, Any]], arguments: dict[str, Any]) -> None:
+    append_job_text_log(job_id, f"Starting {tool_name}")
+    update_job_record(job_id, status="running", message=f"{tool_name} is running.")
+    try:
+        result = fn(**arguments)
+        result_status = result.get("status", "error")
+        job_status = "succeeded" if result_status in {"ok", "warning"} else "failed"
+        append_job_text_log(job_id, f"{tool_name} finished with result status={result_status}")
+        update_job_record(
+            job_id,
+            status=job_status,
+            finished_utc=utc_now(),
+            message=result.get("message", f"{tool_name} finished."),
+            result=result,
+            output_dir=result.get("output_dir"),
+            warnings=result.get("warnings", []),
+        )
+    except Exception as exc:
+        append_job_text_log(job_id, f"{tool_name} failed: {exc}")
+        update_job_record(
+            job_id,
+            status="failed",
+            finished_utc=utc_now(),
+            message=str(exc),
+            result=response_payload(status="error", message=str(exc), job_id=job_id, warnings=[]),
+            warnings=[],
+        )
+
+
+def submit_background_tool(tool_name: str, fn: Callable[..., dict[str, Any]], arguments: dict[str, Any], project_id: str | None = None) -> dict[str, Any]:
+    ensure_workspace()
+    job_id = uuid.uuid4().hex
+    project_slug = safe_slug(project_id or arguments.get("project_id") or "project")
+    project_dir = OUTPUTS_DIR / project_slug
+    log_path = job_text_log_path(job_id)
+    record = {
+        "status": "submitted",
+        "tool": tool_name,
+        "project_id": project_slug,
+        "job_id": job_id,
+        "submitted_utc": utc_now(),
+        "updated_utc": utc_now(),
+        "finished_utc": None,
+        "output_dir": str(project_dir),
+        "log_file": str(log_path),
+        "message": f"{tool_name} submitted. Poll get_job_status(job_id) and read_job_log(job_id).",
+        "warnings": ["This job runs asynchronously to avoid platform HTTP timeouts."],
+        "arguments": {key: value for key, value in arguments.items() if key not in {"content", "content_base64"}},
+        "result": None,
+    }
+    with JOB_LOCK:
+        write_job_record(record)
+    append_job_text_log(job_id, f"Submitted {tool_name}")
+    thread = threading.Thread(target=run_background_tool, args=(job_id, tool_name, fn, arguments), daemon=True)
+    thread.start()
+    return response_payload(
+        status="submitted",
+        project_id=project_slug,
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_path,
+        message=f"{tool_name} submitted. Use get_job_status/read_job_log, then list_result_files/read_report when finished.",
+        warnings=["The HTTP request returned immediately; the real task continues in the local MCP background worker."],
+        data={"job_id": job_id, "tool": tool_name, "poll": {"status_tool": "get_job_status", "log_tool": "read_job_log"}},
+    )
 
 
 def tool_ping() -> dict[str, Any]:
@@ -1725,6 +1842,194 @@ def tool_run_monocle3(
     )
 
 
+def tool_get_job_status(job_id: str) -> dict[str, Any]:
+    record = read_job_record(job_id)
+    return response_payload(
+        status=record.get("status", "unknown"),
+        project_id=record.get("project_id"),
+        job_id=record.get("job_id"),
+        output_dir=record.get("output_dir"),
+        log_file=record.get("log_file"),
+        message=record.get("message", ""),
+        warnings=record.get("warnings", []),
+        data={
+            "tool": record.get("tool"),
+            "submitted_utc": record.get("submitted_utc"),
+            "updated_utc": record.get("updated_utc"),
+            "finished_utc": record.get("finished_utc"),
+            "result_status": (record.get("result") or {}).get("status"),
+            "result_message": (record.get("result") or {}).get("message"),
+            "result": record.get("result") if record.get("status") in {"succeeded", "failed"} else None,
+        },
+    )
+
+
+def tool_read_job_log(job_id: str, max_bytes: int = MAX_READ_BYTES) -> dict[str, Any]:
+    record = read_job_record(job_id)
+    log_path = job_text_log_path(job_id)
+    max_bytes = max(1, min(int(max_bytes), MAX_READ_BYTES))
+    content = ""
+    truncated = False
+    if log_path.exists():
+        raw = log_path.read_bytes()
+        truncated = len(raw) > max_bytes
+        content = raw[-max_bytes:].decode("utf-8", errors="replace")
+    return response_payload(
+        status=record.get("status", "unknown"),
+        project_id=record.get("project_id"),
+        job_id=record.get("job_id"),
+        output_dir=record.get("output_dir"),
+        log_file=log_path,
+        message="Job log read.",
+        warnings=["Log content was truncated to the most recent max_bytes."] if truncated else [],
+        data={"job": record, "log": content, "truncated": truncated},
+    )
+
+
+def tool_start_geo_download(
+    project_id: str,
+    gse_accession: str,
+    file_regex: str = "",
+    max_files: int = 20,
+    overwrite: bool = False,
+    max_bytes_per_file: int = MAX_DOWNLOAD_BYTES,
+) -> dict[str, Any]:
+    return submit_background_tool(
+        "download_geo_supplementary",
+        tool_download_geo_supplementary,
+        {
+            "project_id": project_id,
+            "gse_accession": gse_accession,
+            "file_regex": file_regex,
+            "max_files": max_files,
+            "overwrite": overwrite,
+            "max_bytes_per_file": max_bytes_per_file,
+        },
+        project_id=project_id,
+    )
+
+
+def tool_start_extract_workspace_archive(archive_path: str, output_dir: str = "", overwrite: bool = False, max_members: int = 20000, project_id: str = "archive_extract") -> dict[str, Any]:
+    return submit_background_tool(
+        "extract_workspace_archive",
+        tool_extract_workspace_archive,
+        {"archive_path": archive_path, "output_dir": output_dir, "overwrite": overwrite, "max_members": max_members},
+        project_id=project_id,
+    )
+
+
+def tool_start_scanpy_basic(
+    project_id: str,
+    input_path: str,
+    species: str = "human",
+    input_type: str = "",
+    batch_col: str = "",
+    metadata_path: str = "",
+    sample_id: str = "",
+    group_col: str = "",
+    annotation_method: str = "marker_summary",
+    timeout_seconds: int = 3600,
+) -> dict[str, Any]:
+    return submit_background_tool(
+        "run_scanpy_basic",
+        tool_run_scanpy_basic,
+        {
+            "project_id": project_id,
+            "input_path": input_path,
+            "species": species,
+            "input_type": input_type,
+            "batch_col": batch_col,
+            "metadata_path": metadata_path,
+            "sample_id": sample_id,
+            "group_col": group_col,
+            "annotation_method": annotation_method,
+            "timeout_seconds": timeout_seconds,
+        },
+        project_id=project_id,
+    )
+
+
+def tool_start_seurat_basic(
+    project_id: str,
+    input_path: str,
+    species: str = "human",
+    input_type: str = "",
+    metadata_path: str = "",
+    sample_id: str = "",
+    batch_col: str = "",
+    condition_col: str = "",
+    reference_name: str = "",
+    run_annotation: bool = True,
+    run_marker_enrichment: bool = True,
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
+    return submit_background_tool(
+        "run_seurat_basic",
+        tool_run_seurat_basic,
+        {
+            "project_id": project_id,
+            "input_path": input_path,
+            "species": species,
+            "input_type": input_type,
+            "metadata_path": metadata_path,
+            "sample_id": sample_id,
+            "batch_col": batch_col,
+            "condition_col": condition_col,
+            "reference_name": reference_name,
+            "run_annotation": run_annotation,
+            "run_marker_enrichment": run_marker_enrichment,
+            "timeout_seconds": timeout_seconds,
+        },
+        project_id=project_id,
+    )
+
+
+def tool_start_cellchat(
+    project_id: str,
+    approval_token: str,
+    celltype_col: str = "singleR_label",
+    species: str = "human",
+    min_cells: int = 10,
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
+    return submit_background_tool(
+        "run_cellchat",
+        tool_run_cellchat,
+        {
+            "project_id": project_id,
+            "approval_token": approval_token,
+            "celltype_col": celltype_col,
+            "species": species,
+            "min_cells": min_cells,
+            "timeout_seconds": timeout_seconds,
+        },
+        project_id=project_id,
+    )
+
+
+def tool_start_monocle3(
+    project_id: str,
+    approval_token: str,
+    celltype_col: str = "singleR_label",
+    subset_query: str = "",
+    root_query: str = "",
+    timeout_seconds: int = 7200,
+) -> dict[str, Any]:
+    return submit_background_tool(
+        "run_monocle3",
+        tool_run_monocle3,
+        {
+            "project_id": project_id,
+            "approval_token": approval_token,
+            "celltype_col": celltype_col,
+            "subset_query": subset_query,
+            "root_query": root_query,
+            "timeout_seconds": timeout_seconds,
+        },
+        project_id=project_id,
+    )
+
+
 def tool_run_full_workflow_selftest(project_id: str = "mcp_selftest_full_modules", timeout_seconds: int = 7200, confirm_synthetic: bool = False) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_slug = safe_slug(project_id, "mcp_selftest_full_modules")
@@ -2107,19 +2412,27 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "run_demo_pipeline": tool_run_demo_pipeline,
     "list_result_files": tool_list_result_files,
     "read_report": tool_read_report,
+    "get_job_status": tool_get_job_status,
+    "read_job_log": tool_read_job_log,
     "list_geo_supplementary_files": tool_list_geo_supplementary_files,
     "download_geo_supplementary": tool_download_geo_supplementary,
+    "start_geo_download": tool_start_geo_download,
     "extract_workspace_archive": tool_extract_workspace_archive,
+    "start_extract_workspace_archive": tool_start_extract_workspace_archive,
     "list_skill_runtime_files": tool_list_skill_runtime_files,
     "read_skill_runtime_file": tool_read_skill_runtime_file,
     "check_runtime_environment": tool_check_runtime_environment,
     "render_workflow_scripts": tool_render_workflow_scripts,
     "run_scanpy_basic": tool_run_scanpy_basic,
+    "start_scanpy_basic": tool_start_scanpy_basic,
     "run_seurat_basic": tool_run_seurat_basic,
+    "start_seurat_basic": tool_start_seurat_basic,
     "propose_downstream_modules": tool_propose_downstream_modules,
     "validate_result_bundle": tool_validate_result_bundle,
     "run_cellchat": tool_run_cellchat,
+    "start_cellchat": tool_start_cellchat,
     "run_monocle3": tool_run_monocle3,
+    "start_monocle3": tool_start_monocle3,
     "run_full_workflow_selftest": tool_run_full_workflow_selftest,
     "list_workspace_files": tool_list_workspace_files,
     "read_workspace_file": tool_read_workspace_file,
@@ -2135,19 +2448,21 @@ TOOL_SCHEMAS = [
     {"name": "create_project", "description": "Create a project under workspace/outputs.", "inputSchema": {"type": "object", "properties": {"project_name": {"type": "string"}}, "required": ["project_name"]}},
     {"name": "list_result_files", "description": "List files under one project output directory.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "read_report", "description": "Read report_skeleton.md from one project.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
+    {"name": "get_job_status", "description": "Poll an asynchronous MCP job submitted by start_* tools.", "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}},
+    {"name": "read_job_log", "description": "Read the asynchronous MCP job log for a submitted job.", "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["job_id"]}},
     {"name": "list_geo_supplementary_files", "description": "List real GEO supplementary files for a GSE accession without downloading or generating data.", "inputSchema": {"type": "object", "properties": {"gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}}, "required": ["gse_accession"]}},
-    {"name": "download_geo_supplementary", "description": "Download selected real GEO supplementary files into workspace/inputs/<project>/<GSE>; does not generate synthetic data or run analysis.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 20}, "overwrite": {"type": "boolean", "default": False}, "max_bytes_per_file": {"type": "integer", "default": MAX_DOWNLOAD_BYTES}}, "required": ["project_id", "gse_accession"]}},
-    {"name": "extract_workspace_archive", "description": "Extract a downloaded archive under workspace/inputs into workspace/inputs, with path traversal protection.", "inputSchema": {"type": "object", "properties": {"archive_path": {"type": "string"}, "output_dir": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}, "max_members": {"type": "integer", "default": 20000}}, "required": ["archive_path"]}},
+    {"name": "start_geo_download", "description": "Submit an asynchronous real GEO supplementary-file download job into workspace/inputs/<project>/<GSE>.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 20}, "overwrite": {"type": "boolean", "default": False}, "max_bytes_per_file": {"type": "integer", "default": MAX_DOWNLOAD_BYTES}}, "required": ["project_id", "gse_accession"]}},
+    {"name": "start_extract_workspace_archive", "description": "Submit an asynchronous archive extraction job under workspace/inputs with path traversal protection.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "archive_extract"}, "archive_path": {"type": "string"}, "output_dir": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}, "max_members": {"type": "integer", "default": 20000}}, "required": ["archive_path"]}},
     {"name": "list_skill_runtime_files", "description": "List read-only copied Skill assets: agents, references, workflows, templates, and course scripts.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 300}}}},
     {"name": "read_skill_runtime_file", "description": "Read a read-only copied Skill runtime file.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
     {"name": "check_runtime_environment", "description": "Check Python and R package readiness for Scanpy, Seurat, SingleR, CellChat, and Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string", "default": "environment_check"}}}},
     {"name": "render_workflow_scripts", "description": "Render Seurat, SingleR, marker, CellChat, and Monocle3 scripts for a real input under workspace/inputs without running them.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}}, "required": ["project_id", "input_path"]}},
-    {"name": "run_scanpy_basic", "description": "Run the whitelisted Scanpy QC/clustering/annotation-evidence workflow on a real h5ad/10x input under workspace/inputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "group_col": {"type": "string", "default": ""}, "annotation_method": {"type": "string", "default": "marker_summary"}, "timeout_seconds": {"type": "integer", "default": 3600}}, "required": ["project_id", "input_path"]}},
-    {"name": "run_seurat_basic", "description": "Run whitelisted Seurat V5 workflow on a real input under workspace/inputs; supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}, "run_annotation": {"type": "boolean", "default": True}, "run_marker_enrichment": {"type": "boolean", "default": True}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "input_path"]}},
+    {"name": "start_scanpy_basic", "description": "Submit an asynchronous Scanpy QC/clustering/annotation-evidence job on a real h5ad/10x input under workspace/inputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "group_col": {"type": "string", "default": ""}, "annotation_method": {"type": "string", "default": "marker_summary"}, "timeout_seconds": {"type": "integer", "default": 3600}}, "required": ["project_id", "input_path"]}},
+    {"name": "start_seurat_basic", "description": "Submit an asynchronous Seurat V5 job on a real input under workspace/inputs; supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "species": {"type": "string", "default": "human"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "sample_id": {"type": "string", "default": ""}, "batch_col": {"type": "string", "default": ""}, "condition_col": {"type": "string", "default": ""}, "reference_name": {"type": "string", "default": ""}, "run_annotation": {"type": "boolean", "default": True}, "run_marker_enrichment": {"type": "boolean", "default": True}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "input_path"]}},
     {"name": "propose_downstream_modules", "description": "Generate downstream_proposal.md from upstream annotation and marker results before CellChat/Monocle3.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "validate_result_bundle", "description": "Generate result_quality_check.md from project outputs.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
-    {"name": "run_cellchat", "description": "Run CellChat only after explicit approval_token='APPROVED_CELLCHAT'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "species": {"type": "string", "default": "human"}, "min_cells": {"type": "integer", "default": 10}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
-    {"name": "run_monocle3", "description": "Run Monocle3 only after explicit approval_token='APPROVED_MONOCLE3'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "subset_query": {"type": "string", "default": ""}, "root_query": {"type": "string", "default": ""}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
+    {"name": "start_cellchat", "description": "Submit an asynchronous CellChat job only after explicit approval_token='APPROVED_CELLCHAT'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "species": {"type": "string", "default": "human"}, "min_cells": {"type": "integer", "default": 10}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
+    {"name": "start_monocle3", "description": "Submit an asynchronous Monocle3 job only after explicit approval_token='APPROVED_MONOCLE3'.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "approval_token": {"type": "string"}, "celltype_col": {"type": "string", "default": "singleR_label"}, "subset_query": {"type": "string", "default": ""}, "root_query": {"type": "string", "default": ""}, "timeout_seconds": {"type": "integer", "default": 7200}}, "required": ["project_id", "approval_token"]}},
     {"name": "list_workspace_files", "description": "List files under the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string", "default": ""}, "max_files": {"type": "integer", "default": 200}}}},
     {"name": "read_workspace_file", "description": "Read a text or base64-encoded file from the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["relative_path"]}},
     {"name": "write_workspace_file", "description": "Write text or base64 content into the MCP workspace sandbox.", "inputSchema": {"type": "object", "properties": {"relative_path": {"type": "string"}, "content": {"type": "string", "default": ""}, "content_base64": {"type": "string", "default": ""}, "overwrite": {"type": "boolean", "default": False}}, "required": ["relative_path"]}},

@@ -1,6 +1,6 @@
 # scMechanism Agent Local MCP Backend
 
-This directory is an optional local extension. It lets the Medical AI Skill platform call a lightweight backend running on your own computer through a Cloudflare Quick Tunnel.
+This directory is an optional local extension. It lets the Medical AI Skill platform call a sandboxed backend running on your own computer through a Cloudflare Quick Tunnel.
 
 The server is intentionally limited:
 
@@ -9,7 +9,8 @@ The server is intentionally limited:
 - inputs are restricted to `mcp_server/workspace/inputs/`.
 - outputs are restricted to `mcp_server/workspace/outputs/`.
 - logs are written to `mcp_server/workspace/logs/`.
-- demo output is synthetic and contains no patient data.
+- platform connection tests should use `ping`, `list_available_pipelines`, `check_runtime_environment`, or GEO listing/downloading tools; they should not generate synthetic demo data.
+- synthetic demo/selftest tools are hidden from the normal `tools/list` response and require an explicit `confirm_synthetic=true` argument if called directly.
 
 ## Directory Layout
 
@@ -112,7 +113,7 @@ $body = @{
   params = @{
     name = "create_project"
     arguments = @{
-      project_name = "demo_project"
+      project_name = "case01"
     }
   }
 } | ConvertTo-Json -Depth 6
@@ -135,7 +136,7 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
 ```
 
-Run demo pipeline:
+List real GEO supplementary files:
 
 ```powershell
 $body = @{
@@ -143,15 +144,38 @@ $body = @{
   id = 2
   method = "tools/call"
   params = @{
-    name = "run_demo_pipeline"
+    name = "list_geo_supplementary_files"
     arguments = @{
-      project_id = "demo_project"
+      gse_accession = "GSE176078"
     }
   }
 } | ConvertTo-Json -Depth 6
 
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
 ```
+
+Download selected real GEO supplementary files into the sandbox:
+
+```powershell
+$body = @{
+  jsonrpc = "2.0"
+  id = 3
+  method = "tools/call"
+  params = @{
+    name = "download_geo_supplementary"
+    arguments = @{
+      project_id = "case01"
+      gse_accession = "GSE176078"
+      file_regex = "matrix|barcodes|features|genes|h5|h5ad|rds|tar|tgz"
+      max_files = 10
+    }
+  }
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
+```
+
+After downloading, extract archives with `extract_workspace_archive` when needed, inspect files under `mcp_server/workspace/inputs/case01/GSE176078/`, then run `run_seurat_basic` or `run_scanpy_basic` with the real input path. Do not use `run_demo_pipeline` for real-data validation.
 
 ## Expose With Cloudflare Quick Tunnel
 
@@ -234,9 +258,11 @@ https://example-random.trycloudflare.com/health
 - `ping()`
 - `list_available_pipelines()`
 - `create_project(project_name: str)`
-- `run_demo_pipeline(project_id: str)`
 - `list_result_files(project_id: str)`
 - `read_report(project_id: str)`
+- `list_geo_supplementary_files(gse_accession: str, file_regex: str = "")`
+- `download_geo_supplementary(project_id: str, gse_accession: str, file_regex: str = "", max_files: int = 20, overwrite: bool = false, max_bytes_per_file: int = 2000000000)`
+- `extract_workspace_archive(archive_path: str, output_dir: str = "", overwrite: bool = false, max_members: int = 20000)`
 - `list_skill_runtime_files(relative_path: str = "", max_files: int = 300)`
 - `read_skill_runtime_file(relative_path: str, max_bytes: int = 1000000)`
 - `check_runtime_environment(project_id: str = "environment_check")`
@@ -253,9 +279,18 @@ https://example-random.trycloudflare.com/health
 - `download_to_workspace(url: str, relative_path: str, overwrite: bool = false, max_bytes: int = 100000000)`
 - `run_workspace_python(project_id: str, script_path: str, args: list[str] = [], timeout_seconds: int = 120)`
 
+Synthetic tools still exist for local developer diagnostics, but they are not advertised through normal `tools/list` and are blocked unless explicitly confirmed:
+
+```text
+run_demo_pipeline(project_id="demo_project", confirm_synthetic=true)
+run_full_workflow_selftest(project_id="mcp_selftest_full_modules", confirm_synthetic=true)
+```
+
+These tools create synthetic data and must not be used to claim that real GEO data were downloaded or analyzed.
+
 `run_scanpy_basic` now runs a guarded Scanpy workflow for `h5ad`, `10x_mtx`, or `10x_h5` inputs under `workspace/inputs/`. It uses the analysis Python detected by `SCMECHANISM_PYTHON` or the default `seuratv5-course-py` environment. If no metadata is supplied for a 10x folder, it creates default `sample_id`, `group`, and `batch` columns so downstream marker and review steps still have a stable grouping column. If metadata is supplied, pass `metadata_path` under `workspace/inputs/`; row names, `cell`, or `barcode` are matched to cell barcodes. It writes QC metrics, UMAP figures, marker tables, annotation-evidence tables, optional enrichment, logs, and a processed h5ad under `workspace/outputs/<project_id>/scanpy_basic/`.
 
-`run_seurat_basic` now renders and runs the copied course-adapted Seurat V5 workflow:
+`run_seurat_basic` now renders and runs the copied course-adapted Seurat V5 workflow on real input under `workspace/inputs/`. It supports `10x_mtx`, `10x_nonstandard`, `10x_h5`, `rds`, and `csv`:
 
 1. `01_seurat_v5_core_pipeline.R`
 2. `05_singler_cell_annotation.R`
@@ -284,7 +319,7 @@ Without the matching approval token, both tools return `approval_required` and d
 
 ## Minimal Local Workflow
 
-1. Put data under `mcp_server/workspace/inputs/`.
+1. List/download GEO data or put local data under `mcp_server/workspace/inputs/`.
 2. Create a project:
 
 ```text
@@ -300,7 +335,11 @@ check_runtime_environment(project_id="case01")
 4. Run Seurat or Scanpy:
 
 ```text
+list_geo_supplementary_files(gse_accession="GSE176078")
+download_geo_supplementary(project_id="case01", gse_accession="GSE176078", file_regex="scRNASeq|RAW|matrix|h5ad|rds|tar")
+extract_workspace_archive(archive_path="case01/GSE176078/GSE176078_Wu_etal_2021_BRCA_scRNASeq.tar.gz", output_dir="case01/GSE176078/extracted")
 run_seurat_basic(project_id="case01", input_path="my_10x_folder", input_type="10x_mtx", species="human")
+run_seurat_basic(project_id="case01", input_path="case01/GSE176078/extracted_sample", input_type="10x_nonstandard", species="human")
 run_scanpy_basic(project_id="case01", input_path="processed.h5ad", input_type="h5ad", species="human")
 run_scanpy_basic(project_id="case02", input_path="sample_10x", input_type="10x_mtx", species="human", sample_id="sample_10x")
 ```

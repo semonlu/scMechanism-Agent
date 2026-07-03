@@ -4,6 +4,8 @@
 
 根据数据格式、分析计划、使用者确认状态和已有结果，选择本地可运行脚本。Seurat V5 相关流程优先使用 `scripts/course_adapted/` 中的课程改造 R 脚本；只有需要替换占位符时才调用 `scripts/render_template.py`。
 
+生成或启动 Seurat/Scanpy 分析前，必须先同步数据输入：GEO 下载和解压由 MCP 自动写入 `data_input_manifest.json`；用户手动上传或复制数据时先调用 `register_input_dataset`；正式分析前调用 `validate_data_analysis_qc` 或本地 `scripts/validate_data_sync.py`。如果 `data_analysis_qc.md` 显示实际 `input_path` 不匹配，不得继续生成下游运行命令。
+
 ## 可直接生成的脚本
 
 ```text
@@ -14,6 +16,7 @@ Marker/GO/KEGG: scripts/course_adapted/02_marker_enrichment_from_seurat.R
 Scanpy Python: templates/scanpy_basic_pipeline_template.py
 Scanpy 批次/注释/富集: templates/scanpy_batch_annotation_enrichment_template.py
 结果检查/报告: scripts/validate_result_bundle.py, scripts/write_analysis_report.py
+数据同步检查: scripts/validate_data_sync.py 或 MCP validate_data_analysis_qc
 ```
 
 ## Seurat V5 脚本顺序
@@ -24,35 +27,39 @@ Scanpy 批次/注释/富集: templates/scanpy_batch_annotation_enrichment_templa
    课程代码: `05_read_10x_standard.R`, `06_read_10x_nonstandard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R`
    调用: `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`
 
-2. 单细胞 QC 和过滤
+2. 数据分析质控和输入同步
+   调用: MCP `register_input_dataset` / `validate_data_analysis_qc`，或 `scripts/validate_data_sync.py`
+   输出: `data_input_manifest.json`, `data_analysis_qc.md`
+
+3. 单细胞 QC 和过滤
    课程代码: `10_quality_control.R`
    调用: `01_seurat_v5_core_pipeline.R` 和 `singlecell_qc_rules.md`
 
-3. 第一次标准化、PCA、Harmony/批次处理
+4. 第一次标准化、PCA、Harmony/批次处理
    课程代码: `11_normalization_decontx_harmony.R`
    调用: `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`
 
-4. 双细胞检测
+5. 双细胞检测
    课程代码: `12_doublet_finder.R` 或 `13_scdblfinder.R`
    规则: raw counts 和 sample/loading batch 信息足够时要加入；跳过时必须说明原因。
 
-5. 去除双细胞
+6. 去除双细胞
    课程代码: `12_doublet_finder.R` 或 `13_scdblfinder.R`
    规则: 按样本/批次移除 predicted doublets，不硬编码 DoubletFinder 分类列名。
 
-6. 双细胞后标准化/重新处理
+7. 双细胞后标准化/重新处理
    课程代码: `14_post_doublet_normalization.R`
    规则: 去除双细胞后必须重新 NormalizeData、FindVariableFeatures、ScaleData、PCA、neighbors、clusters、UMAP。
 
-7. 单细胞分群聚类和分辨率检查
+8. 单细胞分群聚类和分辨率检查
    课程代码: `15_clustering_resolution.R`
    调用: `01_seurat_v5_core_pipeline.R`
 
-8. Marker 检测
+9. Marker 检测
    课程代码: `23_marker_detection_methods.R`
    调用: `01_seurat_v5_core_pipeline.R` 和 `02_marker_enrichment_from_seurat.R`
 
-9. 细胞注释
+10. 细胞注释
    课程代码: `16_manual_cell_annotation.R`, `17_singler_annotation.R`, `18_scina_annotation.R`, `21_transferdata_annotation.R`, `22_scpred_annotation.R`
    调用: `05_singler_cell_annotation.R` 加人工 marker 复核。
 
@@ -95,10 +102,12 @@ Monocle3 R: scripts/course_adapted/04_monocle3_from_seurat.R
 8. 输入是结果表时，转到结果质控、下游方案、解释和报告，不生成重跑代码。
 9. 空间转录组数据不能套用普通 scRNA-seq 模板；先要求平台、组织切片、坐标和图像信息。
 10. CellChat/Monocle3 必须先过“下游模块确认门”。没有使用者确认时，不能生成运行命令。
+11. Seurat/Scanpy 分析必须先通过数据输入同步检查；如果项目已有 manifest 且实际 input_path 不匹配，必须停止。
 
 ## 输出要求
 
 - 暴露输入路径、metadata 路径、输出目录和关键参数。
+- 同时暴露 `data_input_manifest.json` 和 `data_analysis_qc.md` 的位置。
 - 默认保存日志、session info、主要中间对象和关键表格。
 - 写明用户必须替换的占位符。
 - 不硬编码课程里的 `Type`、固定阈值、固定分辨率或示例对象名。

@@ -9,6 +9,7 @@ arg_value <- function(name, default = "") {
 has_flag <- function(name) any(args == name)
 
 course_root <- arg_value("--course-root", "")
+profile <- tolower(arg_value("--profile", "course"))
 skip_cran <- has_flag("--skip-cran")
 skip_bioc <- has_flag("--skip-bioc")
 skip_github <- has_flag("--skip-github")
@@ -18,7 +19,13 @@ force <- has_flag("--force")
 options(repos = c(CRAN = "https://cran.r-project.org"))
 options(timeout = max(3600, getOption("timeout")))
 
+valid_profiles <- c("minimal", "extended", "course")
+if (!profile %in% valid_profiles) {
+  stop("Unknown --profile ", profile, "; use one of: ", paste(valid_profiles, collapse = ", "))
+}
+
 message("R version: ", paste(R.version$major, R.version$minor, sep = "."))
+message("Install profile: ", profile)
 if (nzchar(course_root)) message("Course root: ", course_root)
 
 install_if_missing <- function(pkgs, source = "CRAN") {
@@ -29,14 +36,33 @@ install_if_missing <- function(pkgs, source = "CRAN") {
     return(invisible(TRUE))
   }
   message("Installing ", source, " packages: ", paste(missing, collapse = ", "))
+  dependency_mode <- if (profile == "course") TRUE else c("Depends", "Imports", "LinkingTo")
   if (source == "CRAN") {
-    install.packages(missing, dependencies = TRUE)
+    install.packages(missing, dependencies = dependency_mode)
   } else if (source == "Bioconductor") {
     if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-    BiocManager::install(missing, ask = FALSE, update = FALSE)
+    BiocManager::install(missing, ask = FALSE, update = FALSE, dependencies = dependency_mode)
   }
   invisible(TRUE)
 }
+
+minimal_cran_packages <- c(
+  "Seurat", "SeuratObject", "Matrix", "ggplot2", "patchwork", "dplyr",
+  "data.table", "tibble", "ggrepel", "remotes"
+)
+
+minimal_bioc_packages <- c(
+  "SingleR", "celldex", "SingleCellExperiment", "SummarizedExperiment"
+)
+
+extended_bioc_packages <- c(
+  "clusterProfiler", "org.Mm.eg.db", "org.Hs.eg.db", "BiocParallel"
+)
+
+extended_github_specs <- list(
+  list(repo = "jinworks/CellChat"),
+  list(repo = "cole-trapnell-lab/monocle3")
+)
 
 cran_packages <- c(
   "remotes","devtools","RANN","RColorBrewer","cowplot","Seurat","SeuratObject",
@@ -105,6 +131,20 @@ local_archives <- c(
   "hdWGCNA-0.3.00.tar.gz"
 )
 
+if (profile == "minimal") {
+  cran_packages <- minimal_cran_packages
+  bioc_packages <- minimal_bioc_packages
+  github_specs <- list()
+  version_specs <- list()
+  local_archives <- character(0)
+} else if (profile == "extended") {
+  cran_packages <- minimal_cran_packages
+  bioc_packages <- c(minimal_bioc_packages, extended_bioc_packages)
+  github_specs <- extended_github_specs
+  version_specs <- list()
+  local_archives <- character(0)
+}
+
 if (!skip_cran) install_if_missing(cran_packages, "CRAN")
 if (!skip_bioc) install_if_missing(bioc_packages, "Bioconductor")
 
@@ -164,6 +204,18 @@ required_imports <- c(
   "scPred","SCpubr","Seurat","SeuratObject","SingleCellExperiment","SingleR",
   "starTracer","stringr","tidyverse","tricycle","UCell","vioplot","WGCNA"
 )
+
+if (profile == "minimal") {
+  required_imports <- c(minimal_cran_packages, minimal_bioc_packages)
+} else if (profile == "extended") {
+  required_imports <- c(
+    minimal_cran_packages,
+    minimal_bioc_packages,
+    extended_bioc_packages,
+    "CellChat",
+    "monocle3"
+  )
+}
 
 check <- data.frame(
   package = required_imports,

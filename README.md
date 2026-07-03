@@ -82,37 +82,45 @@ The framework is intended for research assistance and hypothesis generation. All
 
 ## Runtime Requirements
 
-- Python 3.10 or newer
-- R 4.3 or newer
-- Conda or another Python environment manager
-- Required R and Python packages depend on the selected script or template
+- Python 3.10 or newer for the helper scripts and Scanpy templates.
+- R 4.3 or newer for Seurat-oriented scripts.
+- Conda or another Python environment manager.
+- Package needs depend on the selected script/template; see `references/environment/cross-platform-setup.md`, `references/environment/requirements.md`, `references/environment/path-setup.md`, `references/seurat_pipeline_rules.md`, and `references/scanpy_pipeline_rules.md`.
+- Use `scripts/env_setup/check_environment.py` as the preferred Windows/Linux/macOS environment checker. The older PowerShell scripts remain available for Windows/course compatibility.
 
 Relevant environment and pipeline references are provided in:
 
 ```text
+references/environment/cross-platform-setup.md
 references/environment/requirements.md
 references/environment/path-setup.md
 references/seurat_pipeline_rules.md
 references/scanpy_pipeline_rules.md
 ```
 
-Before running Seurat V5 course-derived modules, users can check the local environment with:
+Cross-platform environment preparation:
+
+```bash
+conda env create -f environment.yml
+conda activate scmechanism-agent
+Rscript scripts/env_setup/install_r_packages.R --profile minimal
+python scripts/env_setup/check_environment.py --profile minimal
+```
+
+Existing environments can be updated with one command:
+
+```bash
+python scripts/env_setup/install_minimal_env.py --env-name scmechanism-agent
+```
+
+Use `--profile extended` only when running optional CellChat, Monocle3, or
+marker-enrichment course modules.
+
+Legacy Windows/course PowerShell helpers remain available:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\check_environment.ps1 -CondaEnv seuratv5-course-py
-```
-
-When required tools or packages are missing, users can run:
-
-```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\install_environment.ps1 -InstallRPackages -InstallPythonEnv
-```
-
-Python and Scanpy users can create the conda environment from:
-
-```powershell
-conda env create -f .\environment.yml
-conda activate scmechanism-agent
 ```
 
 ---
@@ -127,7 +135,6 @@ environment.yml
 agents/
 references/
 templates/
-examples/
 scripts/
   env_setup/
   course_source/
@@ -141,7 +148,6 @@ scripts/
 | `agents/`                 | Agent definitions and reasoning modules                      |
 | `references/`             | Environment notes, pipeline rules, and methodological references |
 | `templates/`              | Reusable Scanpy and reporting templates                      |
-| `examples/`               | Example inputs and validation cases                          |
 | `scripts/env_setup/`      | Environment checking and installation scripts                |
 | `scripts/course_source/`  | English-named source reference scripts adapted from Seurat V5 course materials |
 | `scripts/course_adapted/` | Runnable and parameterized Seurat-oriented analysis scripts  |
@@ -286,11 +292,13 @@ scMechanism-Agent separates the research workflow into six layers:
 
 Heavy computation remains external and auditable. The framework coordinates the analysis steps, generates reproducible scripts, validates available outputs, and assists with structured scientific interpretation.
 
+For a fuller system view, see `docs/architecture.md`.
+
 ---
 
-## Example Use Cases
+## Supported Use Cases
 
-The `examples/` directory contains cases covering:
+The framework is designed for cases covering:
 
 1. Clinical research question only
 2. 10x MEX files
@@ -300,7 +308,7 @@ The `examples/` directory contains cases covering:
 6. Uploaded marker tables
 7. Uploaded CellChat results
 
-These examples are intended to demonstrate how the framework diagnoses data structure, selects appropriate analysis strategies, and generates reproducible outputs.
+These use cases demonstrate how the framework diagnoses data structure, selects appropriate analysis strategies, and generates reproducible outputs.
 
 ---
 

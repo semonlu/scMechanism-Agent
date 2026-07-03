@@ -3,7 +3,8 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - python>=3.10
+  - python>=3.10,<3.12
+  - r-base>=4.3,<4.5
   - scanpy>=1.10
   - anndata
   - pandas
@@ -13,11 +14,10 @@ dependencies:
   - seaborn
   - leidenalg
   - igraph
+  - liana
+  - celltypist
+  - gseapy
+  - harmonypy
+  - bbknn
+  - scanorama
   - pip
-  - pip:
-      - celltypist
-      - gseapy
-      - harmonypy==0.0.10
-      - bbknn
-      - scanorama
-      - liana

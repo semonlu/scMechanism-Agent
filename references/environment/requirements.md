@@ -1,5 +1,27 @@
 # Requirements Inventory
 
+## Environment Profiles
+
+Use `references/environment/cross-platform-setup.md` as the primary
+Windows/Linux/macOS setup guide.
+
+The recommended default is the `minimal` profile:
+
+- `environment.yml` installs Python, Scanpy-compatible packages, and R base.
+- `Rscript scripts/env_setup/install_r_packages.R --profile minimal` installs
+  Seurat, SingleR, celldex, SingleCellExperiment, and plotting/table packages
+  required by the core Seurat/SingleR workflow scripts.
+- `python scripts/env_setup/check_environment.py --profile minimal` verifies
+  the local environment.
+
+Use `extended` only for optional downstream modules:
+
+- marker enrichment: `clusterProfiler`, `org.Mm.eg.db`, `org.Hs.eg.db`
+- CellChat: `CellChat`
+- Monocle3: `monocle3`
+
+Use `course` only when reproducing the broad historical Seurat V5 course stack.
+
 ## External Software
 
 The course bundle includes installers in `1.软件安装/`. The skill requires R 4.3 or newer and Python 3.10 or newer:
@@ -122,7 +144,7 @@ ipykernel
 
 Use `seuratv5-course-py` as the default Conda environment name.
 
-For platform-independent Scanpy work, this repository also provides:
+For platform-independent local work, this repository also provides:
 
 ```text
 environment.yml
@@ -133,6 +155,9 @@ Create it with:
 ```powershell
 conda env create -f environment.yml
 conda activate scmechanism-agent
+Rscript scripts/env_setup/install_r_packages.R --profile minimal
+python scripts/env_setup/check_environment.py --profile minimal
 ```
 
-This file is a lightweight Python/Scanpy environment. It does not replace the Windows R package installer for Seurat V5 course-derived modules.
+This file is the cross-platform conda base layer. R package installation is
+profile-based and handled by `scripts/env_setup/install_r_packages.R`.

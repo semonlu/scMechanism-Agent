@@ -27,7 +27,20 @@ C:\Program Files\JAGS\JAGS-4.3.1\x64\bin
 C:\Program Files\JAGS\JAGS-4.3.1\bin
 ```
 
-## Verification Commands
+## Cross-Platform Verification Commands
+
+Prefer these commands on Windows, Linux, and macOS:
+
+```bash
+conda activate scmechanism-agent
+python scripts/env_setup/check_environment.py --profile minimal
+python scripts/env_setup/check_environment.py --profile extended
+```
+
+Use `extended` only when optional CellChat, Monocle3, or enrichment modules are
+needed.
+
+## Legacy Windows Verification Commands
 
 ```powershell
 Rscript --version

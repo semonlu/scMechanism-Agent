@@ -46,7 +46,7 @@ Start every task by determining which of these modes applies:
 2. **Publication or methods text**: extract accessions, organism, tissue, sample groups, platform, matrix/object availability, and missing metadata before writing code.
 3. **File list/accession diagnosis**: use `agents/02_geo_dataset_and_format_diagnosis.md` and optionally run `scripts/diagnose_geo_inputs.py`.
 4. **Analysis planning**: use `agents/03_analysis_plan_generator.md` and optionally run `scripts/build_analysis_plan.py`.
-5. **Environment preparation**: before Seurat V5 course-derived execution, read `references/environment/requirements.md`, `references/environment/path-setup.md`, and run `scripts/env_setup/check_environment.ps1`; run `scripts/env_setup/install_environment.ps1` when tools or packages are missing.
+5. **Environment preparation**: before Seurat V5 course-derived execution, read `references/environment/cross-platform-setup.md`, `references/environment/requirements.md`, and `references/environment/path-setup.md`; run `scripts/env_setup/check_environment.py --profile minimal` for the default local check, or `--profile extended` for CellChat/Monocle3/enrichment modules. Windows PowerShell helpers remain available for legacy course installs.
 6. **Code generation**: use `agents/04_code_generator.md`; prefer `scripts/course_adapted/` for Seurat V5 workflows and render placeholders through `scripts/render_template.py`.
 7. **Annotation and result review**: use `agents/05_result_quality_checker.md` and optionally run `scripts/validate_result_bundle.py`.
 8. **Downstream proposal gate**: before CellChat or Monocle3, run `scripts/propose_downstream_modules.py`, present `downstream_proposal.md`, and wait for user approval.
@@ -79,12 +79,14 @@ python scripts/write_analysis_report.py --result-dir analysis/run1 --metadata-js
 python scripts/validate_full_workflow.py --project-root . --example-root analysis/run1 --out-md analysis/run1/full_workflow_validation.md
 ```
 
-Use the PowerShell environment helpers before running Seurat V5 course-derived modules:
+Use the cross-platform environment helpers before running Seurat V5 course-derived modules:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\env_setup\check_environment.ps1 -CondaEnv seuratv5-course-py
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\env_setup\install_environment.ps1 -InstallRPackages -InstallPythonEnv
+```bash
+python scripts/env_setup/install_minimal_env.py --env-name scmechanism-agent
+python scripts/env_setup/check_environment.py --profile minimal
 ```
+
+For Windows course-archive compatibility, the PowerShell helpers under `scripts/env_setup/*.ps1` are still available.
 
 Use these course-adapted R scripts for Seurat V5 analysis:
 
@@ -123,6 +125,7 @@ Read references selectively:
 | `references/output_file_checklist.md` | Expected output files and quality checks. |
 | `references/course-code-index.md` | Exact mapping from Seurat V5 course scripts to skill scripts. |
 | `references/course-adaptation.md` | How to adapt the Chinese Seurat V5 course code safely. |
+| `references/environment/cross-platform-setup.md` | Windows/Linux/macOS environment profiles and setup commands. |
 | `references/environment/requirements.md` | R, Python, R package, and external software inventory. |
 | `references/environment/path-setup.md` | PATH, Rscript, Rtools, JAGS, gzip, and Conda setup rules. |
 | `references/tested-lessons.md` | Hard-won fixes from real Windows/Seurat V5 test runs. |

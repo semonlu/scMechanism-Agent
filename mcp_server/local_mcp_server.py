@@ -38,6 +38,7 @@ from urllib.request import Request, urlopen
 
 
 SERVER_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = SERVER_ROOT.parent
 SKILL_RUNTIME_DIR = SERVER_ROOT / "skill_runtime"
 WORKSPACE_ROOT = SERVER_ROOT / "workspace"
 INPUTS_DIR = WORKSPACE_ROOT / "inputs"
@@ -87,6 +88,15 @@ TEXT_FILE_SUFFIXES = {
     ".r",
 }
 
+SKILL_RUNTIME_ALLOWED_TOP_LEVEL = {
+    "SKILL.md",
+    "README.md",
+    "agents",
+    "references",
+    "scripts",
+    "templates",
+}
+
 MAX_READ_BYTES = 1_000_000
 MAX_WRITE_BYTES = 5_000_000
 MAX_DOWNLOAD_BYTES = 2_000_000_000
@@ -117,6 +127,26 @@ def utc_now() -> str:
 def ensure_workspace() -> None:
     for path in [INPUTS_DIR, OUTPUTS_DIR, LOGS_DIR, CODE_DIR, RUNTIME_DIR, JOBS_DIR]:
         path.mkdir(parents=True, exist_ok=True)
+
+
+def active_skill_runtime_dir() -> Path:
+    if SKILL_RUNTIME_DIR.exists():
+        return SKILL_RUNTIME_DIR
+    return REPO_ROOT
+
+
+def is_allowed_skill_runtime_path(path: Path, root: Path) -> bool:
+    try:
+        rel = path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except ValueError:
+        return False
+    if not rel.parts:
+        return True
+    first = rel.parts[0]
+    if first not in SKILL_RUNTIME_ALLOWED_TOP_LEVEL:
+        return False
+    blocked = {".git", "__pycache__", ".pytest_cache", "workspace"}
+    return not any(part in blocked for part in rel.parts)
 
 
 def safe_slug(value: str, default: str = "project") -> str:
@@ -609,7 +639,7 @@ def tool_list_available_pipelines() -> dict[str, Any]:
         job_id=job_id,
         output_dir=OUTPUTS_DIR,
         log_file=log_file,
-        message="Real-data whitelisted pipelines returned. Local synthetic generators are not available through MCP.",
+        message="Real-data whitelisted pipelines returned.",
         data={"pipelines": PIPELINES},
     )
 
@@ -1193,9 +1223,10 @@ def skill_runtime_path(relative_path: str, *, must_exist: bool = True, allow_dir
     candidate = Path(relative_path)
     if candidate.is_absolute() or ".." in candidate.parts:
         raise ValueError("Skill runtime paths must be relative and cannot use parent traversal")
-    resolved = (SKILL_RUNTIME_DIR / candidate).resolve(strict=False)
-    if not is_relative_to(resolved, SKILL_RUNTIME_DIR):
-        raise ValueError("Skill runtime path escaped mcp_server/skill_runtime")
+    runtime_root = active_skill_runtime_dir()
+    resolved = (runtime_root / candidate).resolve(strict=False)
+    if not is_allowed_skill_runtime_path(resolved, runtime_root):
+        raise ValueError("Skill runtime path escaped the read-only Skill runtime allowlist")
     if must_exist and not resolved.exists():
         raise FileNotFoundError(f"Skill runtime file not found: {relative_path}")
     if resolved.exists() and resolved.is_dir() and not allow_dir:
@@ -1401,39 +1432,51 @@ def render_seurat_workflow_scripts(
 
 def tool_list_skill_runtime_files(relative_path: str = "", max_files: int = 300) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
-    root = SKILL_RUNTIME_DIR if not relative_path else skill_runtime_path(relative_path, must_exist=True, allow_dir=True)
+    runtime_root = active_skill_runtime_dir()
+    root = runtime_root if not relative_path else skill_runtime_path(relative_path, must_exist=True, allow_dir=True)
     files = []
     if root.is_file():
         paths = [root]
     else:
-        paths = [path for path in sorted(root.rglob("*")) if path.is_file()]
+        paths = [
+            path
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and is_allowed_skill_runtime_path(path, runtime_root)
+        ]
     for path in paths[: max(1, min(int(max_files), 1000))]:
         files.append({
-            "path": str(path.relative_to(SKILL_RUNTIME_DIR)).replace("\\", "/"),
+            "path": str(path.relative_to(runtime_root)).replace("\\", "/"),
             "size": path.stat().st_size,
         })
     log_file = log_event("list_skill_runtime_files", job_id, {"relative_path": relative_path, "n_files": len(files)})
+    runtime_mode = "copied_skill_runtime" if runtime_root == SKILL_RUNTIME_DIR else "repository_fallback"
+    warnings = []
+    if runtime_mode == "repository_fallback":
+        warnings.append("mcp_server/skill_runtime is not initialized; using repository Skill assets read-only from the repository root.")
     return response_payload(
         status="ok",
         job_id=job_id,
-        output_dir=SKILL_RUNTIME_DIR,
+        output_dir=runtime_root,
         log_file=log_file,
         message="Read-only skill runtime files listed.",
-        data={"files": files, "skill_runtime": str(SKILL_RUNTIME_DIR)},
+        warnings=warnings,
+        data={"files": files, "skill_runtime": str(runtime_root), "runtime_mode": runtime_mode},
     )
 
 
 def tool_read_skill_runtime_file(relative_path: str, max_bytes: int = MAX_READ_BYTES) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
+    runtime_root = active_skill_runtime_dir()
     path = skill_runtime_path(relative_path, must_exist=True, allow_dir=False)
     max_bytes = max(1, min(int(max_bytes), MAX_READ_BYTES))
     raw = path.read_bytes()
     truncated = len(raw) > max_bytes
     raw_slice = raw[:max_bytes]
     data: dict[str, Any] = {
-        "path": str(path.relative_to(SKILL_RUNTIME_DIR)).replace("\\", "/"),
+        "path": str(path.relative_to(runtime_root)).replace("\\", "/"),
         "size": len(raw),
         "truncated": truncated,
+        "runtime_mode": "copied_skill_runtime" if runtime_root == SKILL_RUNTIME_DIR else "repository_fallback",
     }
     if path.suffix.lower() in TEXT_FILE_SUFFIXES:
         data["content"] = raw_slice.decode("utf-8", errors="replace")
@@ -1445,7 +1488,7 @@ def tool_read_skill_runtime_file(relative_path: str, max_bytes: int = MAX_READ_B
     return response_payload(
         status="ok",
         job_id=job_id,
-        output_dir=SKILL_RUNTIME_DIR,
+        output_dir=runtime_root,
         log_file=log_file,
         message="Read-only skill runtime file returned.",
         warnings=["File was truncated to max_bytes."] if truncated else [],
@@ -2425,23 +2468,23 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "get_job_status": tool_get_job_status,
     "read_job_log": tool_read_job_log,
     "list_geo_supplementary_files": tool_list_geo_supplementary_files,
-    "download_geo_supplementary": tool_download_geo_supplementary,
+    "download_geo_supplementary": tool_start_geo_download,
     "start_geo_download": tool_start_geo_download,
-    "extract_workspace_archive": tool_extract_workspace_archive,
+    "extract_workspace_archive": tool_start_extract_workspace_archive,
     "start_extract_workspace_archive": tool_start_extract_workspace_archive,
     "list_skill_runtime_files": tool_list_skill_runtime_files,
     "read_skill_runtime_file": tool_read_skill_runtime_file,
     "check_runtime_environment": tool_check_runtime_environment,
     "render_workflow_scripts": tool_render_workflow_scripts,
-    "run_scanpy_basic": tool_run_scanpy_basic,
+    "run_scanpy_basic": tool_start_scanpy_basic,
     "start_scanpy_basic": tool_start_scanpy_basic,
-    "run_seurat_basic": tool_run_seurat_basic,
+    "run_seurat_basic": tool_start_seurat_basic,
     "start_seurat_basic": tool_start_seurat_basic,
     "propose_downstream_modules": tool_propose_downstream_modules,
     "validate_result_bundle": tool_validate_result_bundle,
-    "run_cellchat": tool_run_cellchat,
+    "run_cellchat": tool_start_cellchat,
     "start_cellchat": tool_start_cellchat,
-    "run_monocle3": tool_run_monocle3,
+    "run_monocle3": tool_start_monocle3,
     "start_monocle3": tool_start_monocle3,
     "list_workspace_files": tool_list_workspace_files,
     "read_workspace_file": tool_read_workspace_file,

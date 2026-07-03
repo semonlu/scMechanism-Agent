@@ -21,8 +21,6 @@ security:
   allow_paths_outside_workspace_inputs: false
   allow_outputs_outside_workspace_outputs: false
   allow_patient_private_data: false
-  max_demo_rows: 50
-  synthetic_demo_requires_confirmation: true
 
 tools:
   - ping
@@ -50,10 +48,6 @@ tools:
   - write_workspace_file
   - download_to_workspace
   - run_workspace_python
-
-synthetic_test_tools:
-  - run_demo_pipeline
-  - run_full_workflow_selftest
 
 workflow:
   real_geo_download_first:

@@ -14,48 +14,55 @@ SECTIONS = [
         "识别输入格式；FASTQ/SRA 先重建表达矩阵，processed object 先审计 raw counts/layers。",
         "建立 metadata_template.csv，至少包含 sample_id、condition、batch、donor_id、tissue、platform。"
     ]),
-    ("B. 质量控制", [
+    ("B. 数据分析质控和输入同步", [
+        "记录计划下载、解压或用户上传的真实输入，生成 data_input_manifest.json。",
+        "运行 validate_data_sync.py 或 MCP validate_data_analysis_qc，确认实际 input_path 与 manifest 匹配。",
+        "如果 input_path 不匹配，停止 Seurat/Scanpy 分析并要求重新选择正确输入。"
+    ]),
+    ("C. 质量控制", [
         "生成 QC 分布图和 pre/post cell count 表；阈值来自数据分布而非固定套用课程示例。",
         "计算 mitochondrial/ribosomal/hemoglobin 指标，并按物种调整基因前缀。",
         "根据样本和加载密度选择 DoubletFinder、scDblFinder 或 Scanpy/Scrublet。"
     ]),
-    ("C. 标准化与降维", [
+    ("D. 标准化与降维", [
         "运行 NormalizeData/SCTransform 或 Scanpy normalize_total/log1p。",
         "选择高变基因、PCA、邻接图、UMAP/tSNE；记录 PC 数和随机种子。",
         "如有批次，先可视化批次结构，再决定 Harmony/CCA/SCVI 等整合方案。"
     ]),
-    ("D. 聚类与细胞注释", [
+    ("E. 聚类与细胞注释", [
         "扫多个 resolution，结合 clustree、marker coherence 和组织背景选择粒度。",
         "以 marker 证据为主，SingleR/SCINA/TransferData/scPred/CellTypist 为辅助。",
         "输出 annotation_evidence.tsv，保留 uncertain/ambiguous 标签。"
     ]),
-    ("E. 组间比较", [
+    ("F. 组间比较", [
         "优先在细胞类型内比较 disease vs control；多样本时优先 pseudobulk 或尊重 donor 的模型。",
         "细胞比例比较必须按样本聚合，单细胞级比例仅描述性展示。",
         "保留 raw counts/unintegrated assay 用于表达层面的统计。"
     ]),
-    ("F. 功能富集", [
+    ("G. 功能富集", [
         "对 marker/DE gene list 做 GO/KEGG/GSEA，记录数据库、物种、ID 转换和 gene universe。",
         "富集结果解释为功能线索，不等同通路活性证明。"
     ]),
-    ("G. 细胞通讯", [
+    ("H. 细胞通讯", [
         "仅在注释可信且每群细胞数足够时运行 CellChat/NicheNet/CellPhoneDB。",
         "CellChat 结果是配体-受体数据库推断，必须标记为机制假说。"
     ]),
-    ("H. 拟时序/细胞命运", [
+    ("I. 拟时序/细胞命运", [
         "仅对存在连续状态假设的细胞子集运行 Monocle3/Slingshot/PAGA。",
         "记录 root choice、subset rationale 和 sensitivity limits。"
     ]),
-    ("I. 可选扩展：RNA velocity / 虚拟敲除", [
+    ("J. 可选扩展：RNA velocity / 虚拟敲除", [
         "RNA velocity 需要 spliced/unspliced counts；普通表达矩阵不能运行。",
         "虚拟敲除/扰动预测作为后续扩展，第一版仅给出假说生成和外部工具建议。"
     ]),
-    ("J. 预期结果文件", [
+    ("K. 预期结果文件", [
+        "data_input_manifest.json 和 data_analysis_qc.md 必须记录并确认分析输入。",
         "figures/: QC、UMAP、marker、annotation、DE/enrichment、CellChat、pseudotime 图。",
         "tables/: metadata、qc_summary、markers、deg、enrichment、cell_proportion、module_status。",
         "objects/: processed Seurat RDS 或 h5ad；logs/: commands、sessionInfo、package versions。"
     ]),
-    ("K. 风险与限制", [
+    ("L. 风险与限制", [
+        "缺少数据同步质控时，不能确认结果来自计划下载或用户指定的数据。",
         "缺少 metadata 时无法可靠做 disease/control 比较。",
         "样本量过小或无生物学重复时，统计结论只能作为探索性描述。",
         "公共数据再分析不能替代临床诊断或治疗决策。"

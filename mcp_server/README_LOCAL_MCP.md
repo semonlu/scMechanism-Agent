@@ -9,8 +9,8 @@ The server is intentionally limited:
 - inputs are restricted to `mcp_server/workspace/inputs/`.
 - outputs are restricted to `mcp_server/workspace/outputs/`.
 - logs are written to `mcp_server/workspace/logs/`.
-- platform connection tests should use `ping`, `list_available_pipelines`, `check_runtime_environment`, or GEO listing/downloading tools; they should not generate synthetic demo data.
-- synthetic demo/selftest tools are hidden from the normal `tools/list` response and require an explicit `confirm_synthetic=true` argument if called directly.
+- platform connection tests should use `ping`, `list_available_pipelines`, `check_runtime_environment`, or GEO listing/downloading tools.
+- local synthetic generators are not exposed through MCP.
 
 ## Directory Layout
 
@@ -29,7 +29,6 @@ mcp_server/
       course_adapted/
       env_setup/
   pipelines/
-    run_demo_pipeline.py
     run_scanpy_basic.py
     run_seurat_basic.R
     run_cellchat.R
@@ -220,7 +219,7 @@ $body = @{
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8765/mcp -ContentType "application/json" -Body $body
 ```
 
-After downloading, extract archives with `start_extract_workspace_archive` when needed, inspect files under `mcp_server/workspace/inputs/case01/GSE176078/`, then run `start_seurat_basic` or `start_scanpy_basic` with the real input path. Do not use `run_demo_pipeline` for real-data validation.
+After downloading, extract archives with `start_extract_workspace_archive` when needed, inspect files under `mcp_server/workspace/inputs/case01/GSE176078/`, then run `start_seurat_basic` or `start_scanpy_basic` with the real input path.
 
 ## Expose With Cloudflare Quick Tunnel
 
@@ -325,15 +324,6 @@ https://example-random.trycloudflare.com/health
 - `write_workspace_file(relative_path: str, content: str = "", content_base64: str = "", overwrite: bool = false)`
 - `download_to_workspace(url: str, relative_path: str, overwrite: bool = false, max_bytes: int = 100000000)`
 - `run_workspace_python(project_id: str, script_path: str, args: list[str] = [], timeout_seconds: int = 120)`
-
-Synthetic tools still exist for local developer diagnostics, but they are not advertised through normal `tools/list` and are blocked unless explicitly confirmed:
-
-```text
-run_demo_pipeline(project_id="demo_project", confirm_synthetic=true)
-run_full_workflow_selftest(project_id="mcp_selftest_full_modules", confirm_synthetic=true)
-```
-
-These tools create synthetic data and must not be used to claim that real GEO data were downloaded or analyzed.
 
 `start_scanpy_basic` submits a guarded Scanpy workflow for `h5ad`, `10x_mtx`, or `10x_h5` inputs under `workspace/inputs/`. It uses the analysis Python detected by `SCMECHANISM_PYTHON` or the default `seuratv5-course-py` environment. If no metadata is supplied for a 10x folder, it creates default `sample_id`, `group`, and `batch` columns so downstream marker and review steps still have a stable grouping column. If metadata is supplied, pass `metadata_path` under `workspace/inputs/`; row names, `cell`, or `barcode` are matched to cell barcodes. It writes QC metrics, UMAP figures, marker tables, annotation-evidence tables, optional enrichment, logs, and a processed h5ad under `workspace/outputs/<project_id>/scanpy_basic/`.
 

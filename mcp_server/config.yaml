@@ -30,19 +30,21 @@ tools:
   - create_project
   - list_result_files
   - read_report
+  - get_job_status
+  - read_job_log
   - list_geo_supplementary_files
-  - download_geo_supplementary
-  - extract_workspace_archive
+  - start_geo_download
+  - start_extract_workspace_archive
   - list_skill_runtime_files
   - read_skill_runtime_file
   - check_runtime_environment
   - render_workflow_scripts
-  - run_scanpy_basic
-  - run_seurat_basic
+  - start_scanpy_basic
+  - start_seurat_basic
   - propose_downstream_modules
   - validate_result_bundle
-  - run_cellchat
-  - run_monocle3
+  - start_cellchat
+  - start_monocle3
   - list_workspace_files
   - read_workspace_file
   - write_workspace_file
@@ -57,19 +59,23 @@ workflow:
   real_geo_download_first:
     order:
       - list_geo_supplementary_files
-      - download_geo_supplementary
-      - extract_workspace_archive_if_needed
+      - start_geo_download
+      - get_job_status_until_finished
+      - start_extract_workspace_archive_if_needed
+      - get_job_status_until_finished
       - inspect_downloaded_files
-      - run_seurat_basic_or_run_scanpy_basic
+      - start_seurat_basic_or_start_scanpy_basic
+      - get_job_status_until_finished
   seurat_full:
     order:
       - render_workflow_scripts
-      - run_seurat_basic
+      - start_seurat_basic
+      - get_job_status_until_finished
       - validate_result_bundle
       - propose_downstream_modules
       - user_approval_required
-      - run_cellchat
-      - run_monocle3
+      - start_cellchat
+      - start_monocle3
     approval_tokens:
       cellchat: "APPROVED_CELLCHAT"
       monocle3: "APPROVED_MONOCLE3"

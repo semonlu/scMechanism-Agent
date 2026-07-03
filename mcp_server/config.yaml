@@ -22,14 +22,17 @@ security:
   allow_outputs_outside_workspace_outputs: false
   allow_patient_private_data: false
   max_demo_rows: 50
+  synthetic_demo_requires_confirmation: true
 
 tools:
   - ping
   - list_available_pipelines
   - create_project
-  - run_demo_pipeline
   - list_result_files
   - read_report
+  - list_geo_supplementary_files
+  - download_geo_supplementary
+  - extract_workspace_archive
   - list_skill_runtime_files
   - read_skill_runtime_file
   - check_runtime_environment
@@ -46,7 +49,18 @@ tools:
   - download_to_workspace
   - run_workspace_python
 
+synthetic_test_tools:
+  - run_demo_pipeline
+  - run_full_workflow_selftest
+
 workflow:
+  real_geo_download_first:
+    order:
+      - list_geo_supplementary_files
+      - download_geo_supplementary
+      - extract_workspace_archive_if_needed
+      - inspect_downloaded_files
+      - run_seurat_basic_or_run_scanpy_basic
   seurat_full:
     order:
       - render_workflow_scripts

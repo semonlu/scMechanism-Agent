@@ -642,6 +642,226 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def input_manifest_path(project_id: str) -> Path:
+    return require_project_dir(project_id, create=True) / "data_input_manifest.json"
+
+
+def data_qc_report_path(project_id: str) -> Path:
+    return require_project_dir(project_id, create=True) / "data_analysis_qc.md"
+
+
+def summarize_input_path(path: Path, max_files: int = 200) -> dict[str, Any]:
+    resolved = path.resolve(strict=False)
+    if not is_relative_to(resolved, INPUTS_DIR):
+        raise ValueError("Input summary path must stay inside workspace/inputs")
+    files: list[Path] = []
+    if resolved.is_file():
+        files = [resolved]
+    elif resolved.is_dir():
+        files = [p for p in sorted(resolved.rglob("*")) if p.is_file()]
+    total_files = len(files)
+    total_bytes = sum(p.stat().st_size for p in files[:max_files] if p.exists())
+    representative = []
+    for p in files[:20]:
+        stat = p.stat()
+        representative.append({
+            "path": workspace_relative(p),
+            "size": stat.st_size,
+            "modified_utc": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+        })
+    return {
+        "path": workspace_relative(resolved),
+        "is_dir": resolved.is_dir(),
+        "exists": resolved.exists(),
+        "total_files": total_files,
+        "total_bytes_sampled": total_bytes,
+        "representative_files": representative,
+        "truncated": total_files > max_files,
+    }
+
+
+def load_input_manifest(project_id: str) -> dict[str, Any]:
+    path = input_manifest_path(project_id)
+    if not path.exists():
+        return {"project_id": safe_slug(project_id), "entries": []}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_input_manifest(project_id: str, manifest: dict[str, Any]) -> Path:
+    path = input_manifest_path(project_id)
+    manifest["project_id"] = safe_slug(project_id)
+    manifest["updated_utc"] = utc_now()
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def add_input_manifest_entry(
+    project_id: str,
+    *,
+    input_path: Path,
+    input_type: str = "",
+    source_kind: str,
+    source_label: str = "",
+    metadata_path: str = "",
+    extra: dict[str, Any] | None = None,
+) -> tuple[Path, dict[str, Any]]:
+    project_slug = safe_slug(project_id)
+    manifest = load_input_manifest(project_slug)
+    entries = manifest.setdefault("entries", [])
+    entry = {
+        "entry_id": uuid.uuid4().hex,
+        "registered_utc": utc_now(),
+        "source_kind": source_kind,
+        "source_label": source_label,
+        "input_type": input_type,
+        "input": summarize_input_path(input_path),
+        "metadata_path": metadata_path,
+        "extra": extra or {},
+    }
+    entries.append(entry)
+    path = save_input_manifest(project_slug, manifest)
+    return path, entry
+
+
+def input_matches_entry(candidate: Path, entry: dict[str, Any]) -> bool:
+    entry_rel = (entry.get("input") or {}).get("path")
+    if not entry_rel:
+        return False
+    entry_abs = validate_workspace_path(entry_rel, must_exist=False, allow_dir=True)
+    candidate_resolved = candidate.resolve(strict=False)
+    if entry_abs.is_dir():
+        return is_relative_to(candidate_resolved, entry_abs)
+    return candidate_resolved == entry_abs.resolve(strict=False)
+
+
+def write_data_analysis_qc(
+    project_id: str,
+    *,
+    input_path: Path,
+    input_type: str = "",
+    metadata_path: str = "",
+    module: str,
+) -> tuple[str, list[str], Path, dict[str, Any]]:
+    project_slug = safe_slug(project_id)
+    manifest = load_input_manifest(project_slug)
+    entries = manifest.get("entries", [])
+    matched = [entry for entry in entries if input_matches_entry(input_path, entry)]
+    risks: list[str] = []
+    support: list[str] = []
+    if not entries:
+        risks.append("No data_input_manifest.json entries found; register or download the input before interpreting this run as traceable.")
+    if entries and not matched:
+        risks.append("Analysis input_path does not match any registered/downloaded input entry for this project.")
+    if matched:
+        support.append(f"Analysis input matches registered data entry: {matched[-1].get('source_label') or matched[-1].get('entry_id')}.")
+    if metadata_path:
+        meta = validate_input_path(metadata_path)
+        if not meta.exists():
+            risks.append("metadata_path was provided but does not exist under workspace/inputs.")
+        else:
+            support.append("metadata_path exists under workspace/inputs.")
+    else:
+        risks.append("No metadata_path was provided; sample/group/batch synchronization may be limited.")
+
+    status = "ok" if matched and not any("does not match" in r for r in risks) else ("warning" if not entries else "error")
+    report = data_qc_report_path(project_slug)
+    lines = [
+        "# Data Analysis QC",
+        "",
+        f"- Status: {status}",
+        f"- Module: {module}",
+        f"- Analysis input: {workspace_relative(input_path)}",
+        f"- Input type: {input_type or 'not specified'}",
+        f"- Metadata path: {metadata_path or 'not provided'}",
+        f"- Manifest entries: {len(entries)}",
+        f"- Matched entries: {len(matched)}",
+        "",
+        "## Support",
+        *(f"- {item}" for item in support),
+        *([] if support else ["- No manifest-backed input match detected."]),
+        "",
+        "## Risks",
+        *(f"- {item}" for item in risks),
+        *([] if risks else ["- No structural input synchronization risk detected."]),
+        "",
+        "## Required Rule",
+        "The analyzed input must be the same dataset that was planned, downloaded, extracted, or registered for this project. If not, stop and rerun with the correct input_path.",
+    ]
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return status, risks, report, {"manifest": manifest, "matched_entries": matched}
+
+
+def tool_register_input_dataset(
+    project_id: str,
+    input_path: str,
+    input_type: str = "",
+    source_label: str = "",
+    metadata_path: str = "",
+) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    project_slug = safe_slug(project_id)
+    require_project_dir(project_slug, create=True)
+    candidate = validate_input_path(input_path)
+    if not candidate.exists():
+        raise FileNotFoundError("input_path must point to an existing file or folder under workspace/inputs")
+    metadata_candidate = validate_optional_input_path(metadata_path)
+    manifest_path, entry = add_input_manifest_entry(
+        project_slug,
+        input_path=candidate,
+        input_type=input_type or infer_input_type(candidate),
+        source_kind="manual_or_platform_input",
+        source_label=source_label or input_path,
+        metadata_path=metadata_candidate,
+    )
+    qc_status, qc_warnings, qc_report, _ = write_data_analysis_qc(
+        project_slug,
+        input_path=candidate,
+        input_type=entry["input_type"],
+        metadata_path=metadata_candidate,
+        module="register_input_dataset",
+    )
+    log_file = log_event("register_input_dataset", job_id, {"project_id": project_slug, "input_path": input_path, "qc_status": qc_status})
+    return response_payload(
+        status="ok" if qc_status in {"ok", "warning"} else "error",
+        project_id=project_slug,
+        job_id=job_id,
+        output_dir=require_project_dir(project_slug, create=True),
+        log_file=log_file,
+        message="Input dataset registered and data-analysis QC report written.",
+        warnings=qc_warnings,
+        data={"manifest_file": str(manifest_path), "qc_report": str(qc_report), "entry": entry},
+    )
+
+
+def tool_validate_data_analysis_qc(project_id: str, input_path: str, input_type: str = "", metadata_path: str = "", module: str = "analysis") -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    project_slug = safe_slug(project_id)
+    project_dir = require_project_dir(project_slug, create=True)
+    candidate = validate_input_path(input_path)
+    if not candidate.exists():
+        raise FileNotFoundError("input_path must exist under workspace/inputs")
+    inferred_type = input_type or infer_input_type(candidate)
+    metadata_candidate = validate_optional_input_path(metadata_path)
+    status, risks, report, detail = write_data_analysis_qc(
+        project_slug,
+        input_path=candidate,
+        input_type=inferred_type,
+        metadata_path=metadata_candidate,
+        module=module,
+    )
+    log_file = log_event("validate_data_analysis_qc", job_id, {"project_id": project_slug, "status": status, "input_path": input_path})
+    return response_payload(
+        status=status,
+        project_id=project_slug,
+        job_id=job_id,
+        output_dir=project_dir,
+        log_file=log_file,
+        message="Data-analysis input synchronization QC completed.",
+        warnings=risks,
+        data={"qc_report": str(report), "input_type": inferred_type, **detail},
+    )
+
+
 def tool_list_result_files(project_id: str) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     project_dir = require_project_dir(project_id, create=False)
@@ -664,6 +884,7 @@ def tool_read_report(project_id: str) -> dict[str, Any]:
     report_candidates = [
         project_dir / "manuscript_report.md",
         project_dir / "result_quality_check.md",
+        project_dir / "data_analysis_qc.md",
         project_dir / "downstream_proposal.md",
         project_dir / "report_skeleton.md",
     ]
@@ -677,7 +898,7 @@ def tool_read_report(project_id: str) -> dict[str, Any]:
             output_dir=project_dir,
             log_file=log_file,
             message="No readable report found for this project. Run a real workflow and validate/report the result first.",
-            warnings=["Expected one of manuscript_report.md, result_quality_check.md, downstream_proposal.md, or report_skeleton.md."],
+            warnings=["Expected one of manuscript_report.md, result_quality_check.md, data_analysis_qc.md, downstream_proposal.md, or report_skeleton.md."],
         )
     text = report.read_text(encoding="utf-8")
     log_file = log_event("read_report", job_id, {"project_id": project_id, "status": "ok"})
@@ -744,6 +965,18 @@ def tool_download_geo_supplementary(
 
     log_file = log_event("download_geo_supplementary", job_id, {"project_id": project_slug, "gse_accession": gse_accession, "downloaded": len(downloaded), "errors": errors})
     status = "ok" if downloaded and not errors else ("warning" if downloaded else "error")
+    manifest_file = None
+    manifest_entry = None
+    if downloaded:
+        target_abs = INPUTS_DIR / project_slug / gse_accession.strip().upper()
+        manifest_file, manifest_entry = add_input_manifest_entry(
+            project_slug,
+            input_path=target_abs,
+            input_type="geo_supplementary",
+            source_kind="geo_download",
+            source_label=gse_accession.strip().upper(),
+            extra={"downloaded": downloaded, "errors": errors},
+        )
     return response_payload(
         status=status,
         project_id=project_slug,
@@ -752,7 +985,7 @@ def tool_download_geo_supplementary(
         log_file=log_file,
         message="Downloaded real GEO supplementary files into workspace/inputs." if downloaded else "No GEO supplementary files were downloaded.",
         warnings=errors + ["Archives must be extracted/inspected before choosing input_type if downloaded files are tar/tar.gz/tgz."],
-        data={"downloaded": downloaded, "errors": errors, "input_dir": f"{project_slug}/{gse_accession.strip().upper()}"},
+        data={"downloaded": downloaded, "errors": errors, "input_dir": f"{project_slug}/{gse_accession.strip().upper()}", "manifest_file": str(manifest_file) if manifest_file else None, "manifest_entry": manifest_entry},
     )
 
 
@@ -833,15 +1066,31 @@ def tool_extract_workspace_archive(archive_path: str, output_dir: str = "", over
         raise ValueError("Supported archives: .tar, .tar.gz, .tgz, .zip, or single-file .gz")
 
     log_file = log_event("extract_workspace_archive", job_id, {"archive_path": archive_path, "output_dir": output_dir, "n_files": len(extracted)})
+    out_rel = out_dir.relative_to(INPUTS_DIR)
+    project_slug = out_rel.parts[0] if len(out_rel.parts) >= 1 else ""
+    manifest_file = None
+    manifest_entry = None
+    warnings = [] if extracted else ["No files were extracted; existing files may have been skipped because overwrite=false."]
+    if project_slug:
+        manifest_file, manifest_entry = add_input_manifest_entry(
+            project_slug,
+            input_path=out_dir,
+            input_type="extracted_input",
+            source_kind="archive_extract",
+            source_label=archive.name,
+            extra={"archive_path": workspace_relative(archive), "extracted_files": len(extracted)},
+        )
+    else:
+        warnings.append("Could not infer project_id from output_dir; call register_input_dataset before analysis.")
     return response_payload(
         status="ok",
-        project_id=None,
+        project_id=project_slug or None,
         job_id=job_id,
         output_dir=out_dir,
         log_file=log_file,
         message="Archive extracted inside workspace/inputs. Inspect extracted files before choosing the analysis input_type.",
-        warnings=[] if extracted else ["No files were extracted; existing files may have been skipped because overwrite=false."],
-        data={"archive": workspace_relative(archive), "output_dir": str(out_dir.relative_to(INPUTS_DIR)).replace("\\", "/"), "files": extracted[:500], "n_files": len(extracted)},
+        warnings=warnings,
+        data={"archive": workspace_relative(archive), "output_dir": str(out_rel).replace("\\", "/"), "files": extracted[:500], "n_files": len(extracted), "manifest_file": str(manifest_file) if manifest_file else None, "manifest_entry": manifest_entry},
     )
 
 
@@ -1342,6 +1591,26 @@ def tool_run_scanpy_basic(
     if inferred_type not in {"h5ad", "10x_mtx", "10x_h5"}:
         raise ValueError("Scanpy workflow supports h5ad, 10x_mtx, and 10x_h5 inputs.")
     metadata_candidate = validate_optional_input_path(metadata_path)
+    qc_status, qc_warnings, qc_report, _ = write_data_analysis_qc(
+        safe_slug(project_id),
+        input_path=candidate,
+        input_type=inferred_type,
+        metadata_path=metadata_candidate,
+        module="run_scanpy_basic",
+    )
+    warnings.extend(qc_warnings)
+    if qc_status == "error":
+        log_file = log_event("run_scanpy_basic", job_id, {"project_id": project_id, "status": "data_sync_failed"})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Data-analysis QC failed: analysis input does not match the project download/input manifest.",
+            warnings=warnings,
+            data={"qc_report": str(qc_report)},
+        )
     analysis_python = find_analysis_python()
     py_status, py_detail = check_python_packages(analysis_python, ["scanpy", "anndata", "pandas", "numpy", "scipy", "matplotlib", "seaborn", "leidenalg", "igraph"])
     if not py_status.get("scanpy"):
@@ -1395,7 +1664,7 @@ def tool_run_scanpy_basic(
         log_file=log_file,
         message="Scanpy basic workflow completed." if status == "ok" else "Scanpy basic workflow failed. Read the run log for details.",
         warnings=warnings if status == "ok" else warnings + ["See run_log for stdout/stderr."],
-        data={"analysis_python": analysis_python, "run_log": str(run_log), "files": collect_project_files(output_dir)},
+        data={"analysis_python": analysis_python, "run_log": str(run_log), "data_qc_report": str(qc_report), "files": collect_project_files(output_dir)},
     )
 
 
@@ -1447,6 +1716,26 @@ def tool_run_seurat_basic(
     inferred_type = infer_input_type(candidate, input_type)
     if inferred_type not in {"10x_mtx", "10x_nonstandard", "10x_h5", "rds", "csv"}:
         raise ValueError("Seurat workflow supports 10x_mtx, 10x_nonstandard, 10x_h5, rds, and csv inputs.")
+    qc_status, qc_warnings, qc_report, _ = write_data_analysis_qc(
+        safe_slug(project_id),
+        input_path=candidate,
+        input_type=inferred_type,
+        metadata_path=metadata_candidate,
+        module="run_seurat_basic",
+    )
+    warnings.extend(qc_warnings)
+    if qc_status == "error":
+        log_file = log_event("run_seurat_basic", job_id, {"project_id": project_id, "status": "data_sync_failed"})
+        return response_payload(
+            status="error",
+            project_id=safe_slug(project_id),
+            job_id=job_id,
+            output_dir=project_dir,
+            log_file=log_file,
+            message="Data-analysis QC failed: analysis input does not match the project download/input manifest.",
+            warnings=warnings,
+            data={"qc_report": str(qc_report)},
+        )
     scripts = render_seurat_workflow_scripts(
         project_dir,
         candidate,
@@ -1498,6 +1787,7 @@ def tool_run_seurat_basic(
         warnings=warnings + ["CellChat and Monocle3 are not run automatically. Use approval-gated tools after reviewing the proposal."],
         data={
             "run_logs": run_logs,
+            "data_qc_report": str(qc_report),
             "downstream_proposal_status": proposal.get("status"),
             "quality_status": quality.get("status"),
             "files": collect_project_files(project_dir),
@@ -2130,6 +2420,8 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "create_project": tool_create_project,
     "list_result_files": tool_list_result_files,
     "read_report": tool_read_report,
+    "register_input_dataset": tool_register_input_dataset,
+    "validate_data_analysis_qc": tool_validate_data_analysis_qc,
     "get_job_status": tool_get_job_status,
     "read_job_log": tool_read_job_log,
     "list_geo_supplementary_files": tool_list_geo_supplementary_files,
@@ -2165,6 +2457,8 @@ TOOL_SCHEMAS = [
     {"name": "create_project", "description": "Create a project under workspace/outputs.", "inputSchema": {"type": "object", "properties": {"project_name": {"type": "string"}}, "required": ["project_name"]}},
     {"name": "list_result_files", "description": "List files under one project output directory.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
     {"name": "read_report", "description": "Read report_skeleton.md from one project.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]}},
+    {"name": "register_input_dataset", "description": "Register a user-uploaded or manually placed input under workspace/inputs and write data_analysis_qc.md.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "input_type": {"type": "string", "default": ""}, "source_label": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}}, "required": ["project_id", "input_path"]}},
+    {"name": "validate_data_analysis_qc", "description": "Check that an analysis input_path matches the project's planned/downloaded/registered input manifest.", "inputSchema": {"type": "object", "properties": {"project_id": {"type": "string"}, "input_path": {"type": "string"}, "input_type": {"type": "string", "default": ""}, "metadata_path": {"type": "string", "default": ""}, "module": {"type": "string", "default": "analysis"}}, "required": ["project_id", "input_path"]}},
     {"name": "get_job_status", "description": "Poll an asynchronous MCP job submitted by start_* tools.", "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}},
     {"name": "read_job_log", "description": "Read the asynchronous MCP job log for a submitted job.", "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_READ_BYTES}}, "required": ["job_id"]}},
     {"name": "list_geo_supplementary_files", "description": "List real GEO supplementary files for a GSE accession without downloading or generating data.", "inputSchema": {"type": "object", "properties": {"gse_accession": {"type": "string"}, "file_regex": {"type": "string", "default": ""}}, "required": ["gse_accession"]}},

@@ -10,7 +10,7 @@ The server is intentionally limited:
 - outputs are restricted to `mcp_server/workspace/outputs/`.
 - logs are written to `mcp_server/workspace/logs/`.
 - platform connection tests should use `ping`, `list_available_pipelines`, `check_runtime_environment`, or GEO listing/downloading tools.
-- local synthetic generators are not exposed through MCP.
+- only real-data workflow tools are exposed through MCP.
 
 ## Directory Layout
 

@@ -8,6 +8,8 @@
 
 ```text
 metadata.csv
+data_input_manifest.json
+data_analysis_qc.md
 cluster_markers.csv
 singleR_cluster_labels.csv
 annotation_evidence.tsv
@@ -24,11 +26,14 @@ dotplot.png / dotplot.pdf
 
 ```bash
 python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md result_quality_check.md
+python scripts/validate_data_sync.py --result-dir analysis/run1 --input-path /path/to/input --input-type 10x_mtx --manifest analysis/run1/data_input_manifest.json --out-md analysis/run1/data_analysis_qc.md
 python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md analysis/run1/downstream_proposal.md
 ```
 
 ## 必须检查
 
+- `data_analysis_qc.md` 是否存在，且实际分析 `input_path` 是否与前一步计划、下载、解压或用户注册的数据一致。
+- `data_input_manifest.json` 是否记录了 GEO accession、下载目录、解压目录或用户输入目录。
 - 是否有 metadata、分组、样本、批次和 donor/replicate 信息。
 - QC 阈值是否过严或过松。
 - cluster 数量是否异常。
@@ -52,10 +57,13 @@ python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md
 
 当注释不能用于下游时，不得建议直接运行 CellChat 或拟时序。
 
+当数据分析质控显示输入不匹配时，不得解释任何 marker、DE、富集、CellChat 或拟时序结果；必须先回到数据选择/下载/注册步骤。
+
 ## 输出格式
 
 ```text
 总体质量判断：可靠 / 基本可靠 / 需谨慎 / 不建议解释
+数据同步状态：通过 / 缺少 manifest / input_path 不匹配
 细胞注释状态：可用于下游 / 需要人工复核 / 不能用于下游
 主要支持点：
 主要风险：

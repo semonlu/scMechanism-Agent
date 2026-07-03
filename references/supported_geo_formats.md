@@ -3,6 +3,8 @@
 | 文件类型 | 典型文件名 | 判断 | Seurat 读取 | Scanpy 读取 | 风险 |
 |---|---|---|---|---|---|
 | 10x MEX | `matrix.mtx.gz`, `barcodes.tsv.gz`, `features.tsv.gz` | 可直接分析 | `Read10X()` | `sc.read_10x_mtx()` | 需确认每个样本路径和 gene symbol/Ensembl ID |
+| 非标准 10x MEX | `count_matrix_sparse.mtx`, `count_matrix_barcodes.tsv`, `count_matrix_genes.tsv`，常见于 GEO tar/tar.gz 解压后的样本目录 | 解压并确认三件套后可直接分析 | `INPUT_TYPE=10x_nonstandard` -> `scripts/course_adapted/01_seurat_v5_core_pipeline.R`；多样本用 `00_multi_sample_merge_harmony.R` 的 `input_type=10x_nonstandard` | 先整理为标准 MEX 或自行用 `scipy.io.mmread` + TSV 读取 | 不能只按文件名判断方向；需检查矩阵维度、barcode 数、gene 数是否匹配 |
+| GEO 压缩归档 | `*.tar`, `*.tar.gz`, `*.tgz` | 需先解压再判断 | 解压后按标准 10x、非标准 10x、H5、RDS 或普通矩阵分流 | 同左 | 归档扩展名不能说明是否可直接下游分析；不能误判为 FASTQ |
 | 10x H5 | `filtered_feature_bc_matrix.h5`, `raw_feature_bc_matrix.h5` | 可直接分析 | `Read10X_h5()` | `sc.read_10x_h5()` | 需确认是否为 10x 格式而非任意 HDF5 |
 | AnnData | `*.h5ad` | 可直接分析 | 需转换或用 Python | `sc.read_h5ad()` | 可能缺 raw counts，DE/CellChat 受限 |
 | Seurat | `*.rds`, `*.rda`, `*.h5Seurat` | 可能可用 | `readRDS()`, `load()` | 需转换 | 需确认 assays/layers/metadata/reductions |

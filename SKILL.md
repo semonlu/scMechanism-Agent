@@ -13,7 +13,7 @@ Use this skill when a user wants to turn public or local single-cell data into a
 - Publication URLs, abstracts, methods text, or PDF-derived notes that mention public single-cell datasets.
 - GEO supplementary file lists.
 - A disease, tissue, organism, clinical mechanism question, or candidate biomarker question.
-- 10x MEX, 10x H5, Seurat RDS/RDA/h5Seurat, h5ad, loom, CSV/TSV matrices, FASTQ/SRA files, or result tables.
+- 10x MEX, non-standard 10x MEX, 10x H5, Seurat RDS/RDA/h5Seurat, h5ad, loom, CSV/TSV matrices, FASTQ/SRA files, or result tables.
 - Local outputs such as marker tables, DE tables, enrichment tables, cell proportion tables, CellChat results, pseudotime results, UMAPs, dot plots, or report drafts.
 
 ## First-Version Boundary
@@ -71,7 +71,7 @@ Use the Python helpers for orchestration:
 ```bash
 python scripts/diagnose_geo_inputs.py --file-list supplementary_files.txt --out-json diagnosis.json --out-md diagnosis.md
 python scripts/build_analysis_plan.py --diagnosis-json diagnosis.json --question "disease mechanism" --organism human --comparison "disease vs control" --out-md analysis_plan.md
-python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5_core_pipeline.R --out run/01_seurat_v5_core_pipeline.R --define INPUT_PATH=/path/to/data --define OUTPUT_DIR=analysis/run1
+python scripts/render_template.py --template scripts/course_adapted/01_seurat_v5_core_pipeline.R --out run/01_seurat_v5_core_pipeline.R --define INPUT_PATH=/path/to/data --define OUTPUT_DIR=analysis/run1 --define INPUT_TYPE=10x_mtx
 python scripts/validate_result_bundle.py --result-dir analysis/run1 --out-md result_quality_check.md
 python scripts/propose_downstream_modules.py --result-dir analysis/run1 --out-md analysis/run1/downstream_proposal.md
 python scripts/build_codebase_summary.py --course-root scripts/course_source --out CODEBASE_SUMMARY.md
@@ -109,7 +109,7 @@ Use `scripts/course_adapted/` for Seurat V5 course-derived modules. Use `templat
 
 For Seurat V5 course-derived scRNA-seq workflows, do not jump directly from import to annotation or downstream interpretation. The analysis plan and generated code must preserve this order and cite the corresponding course-derived module:
 
-1. Input diagnosis and object construction: `05_read_10x_standard.R`, `08_read_10x_h5.R`, or mixed-input logic from `09_merge_mixed_inputs.R` -> `scripts/course_adapted/01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+1. Input diagnosis and object construction: `05_read_10x_standard.R`, `06_read_10x_nonstandard.R`, `08_read_10x_h5.R`, or mixed-input logic from `09_merge_mixed_inputs.R` -> `scripts/course_adapted/01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
 2. Single-cell QC and filtering: `10_quality_control.R` -> `references/singlecell_qc_rules.md` and `01_seurat_v5_core_pipeline.R`.
 3. First normalization, variable features, scaling, PCA, and optional Harmony: `11_normalization_decontx_harmony.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
 4. Doublet detection: `12_doublet_finder.R` or `13_scdblfinder.R`; propose it when raw counts and per-sample/loading-batch metadata support it, otherwise explain why it is skipped.
@@ -160,7 +160,7 @@ When editing a file, keep its existing language unless a user explicitly request
 
 The local Seurat V5 course archive is reorganized inside the skill at `scripts/course_source/` as English-named source evidence. Runnable versions live in `scripts/course_adapted/`. The course contributes logic for:
 
-- 10x MEX/H5 import.
+- 10x MEX, non-standard 10x MEX, and H5 import.
 - Seurat object construction and QC metrics.
 - QC visualization and filtering.
 - NormalizeData, variable features, ScaleData, PCA, Harmony, UMAP/tSNE.
@@ -175,6 +175,7 @@ Adaptation rules:
 
 - Replace interactive working-directory selection with explicit `input_path`, `metadata_path`, `output_dir`, and config values.
 - Replace hard-coded sample column names such as `Type` with user-provided columns.
+- For non-standard 10x folders containing `count_matrix_sparse.mtx`, `count_matrix_barcodes.tsv`, and `count_matrix_genes.tsv`, route to `INPUT_TYPE=10x_nonstandard` instead of forcing users to manually rename files to standard 10x names.
 - Treat course thresholds and resolution values as examples, not defaults.
 - Record English source script, original course path from `source_manifest.csv`, adapted R script/template, deviation, and method status.
 - Do not upload private expression matrices or clinical metadata to external LLM/API services.

@@ -26,7 +26,7 @@ For Seurat V5 course-derived work, keep the following sequence. Annotation and d
 
 | Order | Step | Course source | Skill script or rule |
 |---|---|---|---|
-| 1 | Import/object construction | `05_read_10x_standard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R` | `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R` |
+| 1 | Import/object construction | `05_read_10x_standard.R`, `06_read_10x_nonstandard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R` | `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`; use `INPUT_TYPE=10x_nonstandard` for `count_matrix_*` folders |
 | 2 | Single-cell QC/filtering | `10_quality_control.R` | `singlecell_qc_rules.md`, `01_seurat_v5_core_pipeline.R` |
 | 3 | First normalization/PCA/Harmony | `11_normalization_decontx_harmony.R` | `01_seurat_v5_core_pipeline.R`, `00_multi_sample_merge_harmony.R` |
 | 4 | Doublet detection | `12_doublet_finder.R`, `13_scdblfinder.R` | propose when raw counts and sample/loading-batch metadata support it |
@@ -37,7 +37,7 @@ For Seurat V5 course-derived work, keep the following sequence. Annotation and d
 | 9 | Cell annotation | `16_manual_cell_annotation.R`, `17_singler_annotation.R`, `18_scina_annotation.R`, `21_transferdata_annotation.R`, `22_scpred_annotation.R` | `05_singler_cell_annotation.R` plus manual marker evidence |
 | 10 | Downstream proposal | CellChat/Monocle/CNV/enrichment modules | propose scope and wait for user approval before execution |
 
-Core functions include `Read10X()`, `Read10X_h5()`, `CreateSeuratObject()`, `PercentageFeatureSet()`, `VlnPlot()`, `FeatureScatter()`, `NormalizeData()`, `FindVariableFeatures()`, `ScaleData()`, `RunPCA()`, optional `RunHarmony()`, `FindNeighbors()`, `FindClusters()`, `RunUMAP()`, and `FindAllMarkers()`.
+Core functions include `Read10X()`, `Read10X_h5()`, `Matrix::readMM()`, barcode/gene TSV parsing for non-standard 10x, `CreateSeuratObject()`, `PercentageFeatureSet()`, `VlnPlot()`, `FeatureScatter()`, `NormalizeData()`, `FindVariableFeatures()`, `ScaleData()`, `RunPCA()`, optional `RunHarmony()`, `FindNeighbors()`, `FindClusters()`, `RunUMAP()`, and `FindAllMarkers()`.
 
 ## Guardrails
 

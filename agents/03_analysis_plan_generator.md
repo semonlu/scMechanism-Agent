@@ -26,7 +26,7 @@ M. 需要使用者确认的问题
 
 当计划选择 Seurat V5 课程来源流程时，必须按下面顺序写明调用依据：
 
-1. 数据导入和对象构建：`05_read_10x_standard.R`、`08_read_10x_h5.R`、`09_merge_mixed_inputs.R` -> `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`。
+1. 数据导入和对象构建：`05_read_10x_standard.R`、`06_read_10x_nonstandard.R`、`08_read_10x_h5.R`、`09_merge_mixed_inputs.R` -> `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`。非标准 10x 使用 `INPUT_TYPE=10x_nonstandard`。
 2. 单细胞 QC：`10_quality_control.R` -> `singlecell_qc_rules.md` 和 `01_seurat_v5_core_pipeline.R`。
 3. 第一次标准化、PCA、Harmony：`11_normalization_decontx_harmony.R` -> `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`。
 4. 双细胞检测：`12_doublet_finder.R` 或 `13_scdblfinder.R`。如果不跑，必须说明原因。

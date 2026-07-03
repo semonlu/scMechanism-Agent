@@ -21,7 +21,7 @@ Use the preserved course code through parameterized adapted scripts:
 
 | Course module | Adapted skill script/reference |
 |---|---|
-| 10x/MEX/H5 import | `scripts/course_adapted/01_seurat_v5_core_pipeline.R` |
+| 10x/MEX/H5 import | `scripts/course_adapted/01_seurat_v5_core_pipeline.R`; use `INPUT_TYPE=10x_nonstandard` for `06_read_10x_nonstandard.R` style folders with `count_matrix_sparse.mtx`, `count_matrix_barcodes.tsv`, and `count_matrix_genes.tsv` |
 | QC and filtering | `scripts/course_adapted/01_seurat_v5_core_pipeline.R`, `references/singlecell_qc_rules.md` |
 | Normalize/PCA/Harmony/UMAP | `scripts/course_adapted/01_seurat_v5_core_pipeline.R` |
 | Doublet detection | `scripts/course_source/12_doublet_finder.R`, `scripts/course_source/13_scdblfinder.R` |

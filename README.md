@@ -183,8 +183,11 @@ python scripts/render_template.py \
   --template scripts/course_adapted/01_seurat_v5_core_pipeline.R \
   --out run/01_seurat_v5_core_pipeline.R \
   --define INPUT_PATH=/data/GSE \
-  --define OUTPUT_DIR=analysis/GSE
+  --define OUTPUT_DIR=analysis/GSE \
+  --define INPUT_TYPE=10x_mtx
 ```
+
+For GEO folders using non-standard 10x names such as `count_matrix_sparse.mtx`, `count_matrix_barcodes.tsv`, and `count_matrix_genes.tsv`, use the same core pipeline with `INPUT_TYPE=10x_nonstandard`. This route is adapted from `scripts/course_source/06_read_10x_nonstandard.R` and reads the matrix through `Matrix::readMM()` plus barcode/gene TSV files.
 
 ### 4. Render a SingleR Cell Annotation Pipeline
 
@@ -241,7 +244,7 @@ The Seurat V5 course archive was reorganized into English filenames under `scrip
 The main adapted modules include:
 
 - `scripts/course_adapted/01_seurat_v5_core_pipeline.R`  
-  Adapted from 10x import, H5 import, quality control, normalization, DecontX, Harmony, and clustering modules.
+  Adapted from standard 10x import, non-standard 10x import, H5 import, quality control, normalization, DecontX, Harmony, and clustering modules.
 
 - `scripts/course_adapted/00_multi_sample_merge_harmony.R`  
   Adapted from multi-sample import, merge, and Harmony integration modules.
@@ -263,7 +266,7 @@ The adapted scripts are parameterized and do not preserve interactive working-di
 For Seurat V5 course-derived scRNA-seq workflows, the expected order is:
 
 ```text
-1. Import/object construction
+1. Import/object construction, including standard 10x, non-standard 10x, H5, RDS, and CSV inputs
 2. Single-cell QC and filtering
 3. First normalization, PCA, and optional Harmony
 4. Doublet detection and removal when applicable
@@ -317,7 +320,7 @@ For a fuller system view, see `docs/architecture.md`.
 The framework is designed for cases covering:
 
 1. Clinical research question only
-2. 10x MEX files
+2. Standard and non-standard 10x MEX files
 3. h5ad/H5 files
 4. Seurat RDS files
 5. FASTQ/SRA-only datasets

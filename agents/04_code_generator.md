@@ -21,7 +21,7 @@ Scanpy 批次/注释/富集: templates/scanpy_batch_annotation_enrichment_templa
 生成 Seurat V5 代码时，必须按课程流程顺序组织，不能把细胞注释放在 QC/标准化/去双/聚类之前：
 
 1. 数据导入和对象构建
-   课程代码: `05_read_10x_standard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R`
+   课程代码: `05_read_10x_standard.R`, `06_read_10x_nonstandard.R`, `08_read_10x_h5.R`, `09_merge_mixed_inputs.R`
    调用: `01_seurat_v5_core_pipeline.R` 或 `00_multi_sample_merge_harmony.R`
 
 2. 单细胞 QC 和过滤
@@ -75,6 +75,7 @@ Monocle3 R: scripts/course_adapted/04_monocle3_from_seurat.R
 ## 格式到脚本
 
 - 10x MEX: `scripts/course_adapted/01_seurat_v5_core_pipeline.R` 或 `templates/scanpy_basic_pipeline_template.py`
+- 非标准 10x MEX: `scripts/course_adapted/01_seurat_v5_core_pipeline.R`，设置 `INPUT_TYPE=10x_nonstandard`；多样本表格用 `00_multi_sample_merge_harmony.R` 并在 `input_type` 列写 `10x_nonstandard`
 - 10x H5: Seurat `Read10X_h5` 分支或 Scanpy `read_10x_h5`
 - h5ad: `templates/scanpy_basic_pipeline_template.py`
 - RDS/RDA: Seurat RDS 分支或下游脚本

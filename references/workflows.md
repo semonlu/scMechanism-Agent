@@ -18,7 +18,7 @@ This skill follows a GEO-to-Mechanism workflow inspired by separate planning, ex
 
 When the selected route is Seurat V5 course-derived scRNA-seq analysis, use this sequence in the plan and code:
 
-1. Import/object construction: `05_read_10x_standard.R`, `08_read_10x_h5.R`, or `09_merge_mixed_inputs.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
+1. Import/object construction: `05_read_10x_standard.R`, `06_read_10x_nonstandard.R`, `08_read_10x_h5.R`, or `09_merge_mixed_inputs.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`; non-standard `count_matrix_*` folders use `INPUT_TYPE=10x_nonstandard`.
 2. Single-cell QC/filtering: `10_quality_control.R` -> `singlecell_qc_rules.md` and `01_seurat_v5_core_pipeline.R`.
 3. First normalization/PCA/Harmony: `11_normalization_decontx_harmony.R` -> `01_seurat_v5_core_pipeline.R` or `00_multi_sample_merge_harmony.R`.
 4. Doublet detection/removal when applicable: `12_doublet_finder.R` or `13_scdblfinder.R`; document if skipped.
@@ -34,6 +34,7 @@ When the selected route is Seurat V5 course-derived scRNA-seq analysis, use this
 - Publication URL/PDF/methods text: extract accessions, sample groups, organism, tissue, platform, available file types, and missing metadata before generating code.
 - GEO file list: diagnose format and required metadata.
 - 10x MEX/H5: generate Seurat or Scanpy template.
+- Non-standard 10x MEX: generate Seurat course-adapted code with `INPUT_TYPE=10x_nonstandard`; extract archives first and keep one sample per directory or one row per sample table.
 - h5ad: generate Scanpy template and inspect raw/layers.
 - Seurat RDS: generate R audit or Seurat downstream template.
 - FASTQ/SRA: generate matrix reconstruction advice; do not run downstream directly.

@@ -26,10 +26,57 @@ if (length(missing_cols) > 0) {
   stop("sample table missing required columns: ", paste(missing_cols, collapse = ", "))
 }
 
+read_maybe_gz_table <- function(path) {
+  read.delim(path, header = FALSE, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+read_maybe_gz_mtx <- function(path) {
+  if (grepl("\\.gz$", path, ignore.case = TRUE)) {
+    con <- gzfile(path, open = "rt")
+    on.exit(close(con), add = TRUE)
+    Matrix::readMM(con)
+  } else {
+    Matrix::readMM(path)
+  }
+}
+
+first_existing <- function(paths) {
+  hits <- paths[file.exists(paths)]
+  if (length(hits) == 0) {
+    return(NA_character_)
+  }
+  hits[[1]]
+}
+
+read_nonstandard_10x_counts <- function(path, sample_id) {
+  matrix_file <- first_existing(file.path(path, c("count_matrix_sparse.mtx", "count_matrix_sparse.mtx.gz", "matrix.mtx", "matrix.mtx.gz")))
+  barcode_file <- first_existing(file.path(path, c("count_matrix_barcodes.tsv", "count_matrix_barcodes.tsv.gz", "barcodes.tsv", "barcodes.tsv.gz")))
+  gene_file <- first_existing(file.path(path, c("count_matrix_genes.tsv", "count_matrix_genes.tsv.gz", "features.tsv", "features.tsv.gz", "genes.tsv", "genes.tsv.gz")))
+
+  if (is.na(matrix_file) || is.na(barcode_file) || is.na(gene_file)) {
+    stop("No non-standard 10x matrix set found for sample ", sample_id, ". Expected count_matrix_sparse.mtx, count_matrix_barcodes.tsv, and count_matrix_genes.tsv in the sample input_path.")
+  }
+
+  counts <- read_maybe_gz_mtx(matrix_file)
+  barcodes <- read_maybe_gz_table(barcode_file)
+  genes <- read_maybe_gz_table(gene_file)
+  gene_names <- if (ncol(genes) >= 2) genes[[2]] else genes[[1]]
+
+  if (ncol(counts) != nrow(barcodes) || nrow(counts) != length(gene_names)) {
+    stop("Non-standard 10x dimensions do not match for sample ", sample_id)
+  }
+
+  rownames(counts) <- make.unique(as.character(gene_names))
+  colnames(counts) <- as.character(barcodes[[1]])
+  counts
+}
+
 read_one <- function(sample_id, input_path, input_type) {
   message("Reading sample ", sample_id, ": ", input_path)
   if (input_type == "10x_mtx") {
     counts <- Read10X(data.dir = input_path)
+  } else if (input_type == "10x_nonstandard") {
+    counts <- read_nonstandard_10x_counts(input_path, sample_id)
   } else if (input_type == "10x_h5") {
     counts <- Read10X_h5(filename = input_path)
   } else if (input_type == "csv") {

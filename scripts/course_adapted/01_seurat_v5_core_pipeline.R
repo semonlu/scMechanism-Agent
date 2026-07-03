@@ -15,7 +15,7 @@ organism <- "{{ORGANISM}}" # human or mouse
 sample_id <- "{{SAMPLE_ID}}"
 batch_col <- "{{BATCH_COL}}"
 condition_col <- "{{CONDITION_COL}}"
-input_type <- "{{INPUT_TYPE}}" # 10x_mtx, 10x_h5, rds, csv
+input_type <- "{{INPUT_TYPE}}" # 10x_mtx, 10x_nonstandard, 10x_h5, rds, csv
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(output_dir, "figures"), showWarnings = FALSE)
@@ -26,10 +26,77 @@ dir.create(file.path(output_dir, "logs"), showWarnings = FALSE)
 mt_pattern <- if (tolower(organism) == "mouse") "^mt-" else "^MT-"
 ribo_pattern <- if (tolower(organism) == "mouse") "^Rp[sl]" else "^RP[SL]"
 
+read_maybe_gz_table <- function(path) {
+  read.delim(path, header = FALSE, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+read_maybe_gz_mtx <- function(path) {
+  if (grepl("\\.gz$", path, ignore.case = TRUE)) {
+    con <- gzfile(path, open = "rt")
+    on.exit(close(con), add = TRUE)
+    Matrix::readMM(con)
+  } else {
+    Matrix::readMM(path)
+  }
+}
+
+first_existing <- function(paths) {
+  hits <- paths[file.exists(paths)]
+  if (length(hits) == 0) {
+    return(NA_character_)
+  }
+  hits[[1]]
+}
+
+read_nonstandard_10x <- function(path, fallback_sample_id) {
+  candidate_dirs <- unique(c(path, list.dirs(path, recursive = FALSE, full.names = TRUE)))
+  count_list <- list()
+  sample_by_cell <- character()
+
+  for (sample_dir in candidate_dirs) {
+    matrix_file <- first_existing(file.path(sample_dir, c("count_matrix_sparse.mtx", "count_matrix_sparse.mtx.gz", "matrix.mtx", "matrix.mtx.gz")))
+    barcode_file <- first_existing(file.path(sample_dir, c("count_matrix_barcodes.tsv", "count_matrix_barcodes.tsv.gz", "barcodes.tsv", "barcodes.tsv.gz")))
+    gene_file <- first_existing(file.path(sample_dir, c("count_matrix_genes.tsv", "count_matrix_genes.tsv.gz", "features.tsv", "features.tsv.gz", "genes.tsv", "genes.tsv.gz")))
+
+    if (is.na(matrix_file) || is.na(barcode_file) || is.na(gene_file)) {
+      next
+    }
+
+    this_sample <- basename(normalizePath(sample_dir, winslash = "/", mustWork = FALSE))
+    if (!nzchar(this_sample) || this_sample == "." || identical(normalizePath(sample_dir, winslash = "/", mustWork = FALSE), normalizePath(path, winslash = "/", mustWork = FALSE))) {
+      this_sample <- fallback_sample_id
+    }
+
+    counts <- read_maybe_gz_mtx(matrix_file)
+    barcodes <- read_maybe_gz_table(barcode_file)
+    genes <- read_maybe_gz_table(gene_file)
+    gene_names <- if (ncol(genes) >= 2) genes[[2]] else genes[[1]]
+
+    if (ncol(counts) != nrow(barcodes) || nrow(counts) != length(gene_names)) {
+      stop("Non-standard 10x dimensions do not match in ", sample_dir)
+    }
+
+    rownames(counts) <- make.unique(as.character(gene_names))
+    colnames(counts) <- paste(this_sample, as.character(barcodes[[1]]), sep = "_")
+    count_list[[this_sample]] <- counts
+    sample_by_cell[colnames(counts)] <- this_sample
+  }
+
+  if (length(count_list) == 0) {
+    stop("No non-standard 10x matrix set found. Expected count_matrix_sparse.mtx, count_matrix_barcodes.tsv, and count_matrix_genes.tsv under INPUT_PATH or its immediate sample subdirectories.")
+  }
+
+  list(counts = do.call(cbind, count_list), sample_by_cell = sample_by_cell)
+}
+
 message("Reading input: ", input_path)
 if (input_type == "10x_mtx") {
   counts <- Read10X(data.dir = input_path)
   obj <- CreateSeuratObject(counts = counts, min.cells = 1, min.features = 1, project = sample_id)
+} else if (input_type == "10x_nonstandard") {
+  nonstandard <- read_nonstandard_10x(input_path, sample_id)
+  obj <- CreateSeuratObject(counts = nonstandard$counts, min.cells = 1, min.features = 1, project = sample_id)
+  obj$sample_id <- unname(nonstandard$sample_by_cell[colnames(obj)])
 } else if (input_type == "10x_h5") {
   counts <- Read10X_h5(filename = input_path)
   obj <- CreateSeuratObject(counts = counts, min.cells = 1, min.features = 1, project = sample_id)

@@ -8,7 +8,7 @@ The current skill does not keep the original Chinese nested filenames as runnabl
 | Single matrix import | `03_read_single_matrix.R` | Seurat object construction pattern. |
 | Multiple matrix import | `04_read_multiple_matrices.R` | Merge pattern with sample metadata. |
 | Standard 10x import | `05_read_10x_standard.R` | `scripts/course_adapted/01_seurat_v5_core_pipeline.R`. |
-| Non-standard 10x import | `06_read_10x_nonstandard.R` | File normalization guidance. |
+| Non-standard 10x import | `06_read_10x_nonstandard.R` | `scripts/course_adapted/01_seurat_v5_core_pipeline.R` with `INPUT_TYPE=10x_nonstandard`; multi-sample sample table can use `input_type=10x_nonstandard`. |
 | Multiple 10x samples | `07_read_multiple_10x_samples.R` | Multi-sample import pattern. |
 | 10x H5 import | `08_read_10x_h5.R` | `scripts/course_adapted/01_seurat_v5_core_pipeline.R`. |
 | Mixed input merge | `09_merge_mixed_inputs.R` | Metadata harmonization guidance. |

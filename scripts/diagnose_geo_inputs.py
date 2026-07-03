@@ -32,6 +32,10 @@ def classify_files(items: list[str]) -> dict:
     has_matrix = any("matrix.mtx" in x for x in names)
     has_barcodes = any("barcodes.tsv" in x for x in names)
     has_features = any("features.tsv" in x or "genes.tsv" in x for x in names)
+    has_nonstandard_matrix = any("count_matrix_sparse.mtx" in x for x in names)
+    has_nonstandard_barcodes = any("count_matrix_barcodes.tsv" in x for x in names)
+    has_nonstandard_genes = any("count_matrix_genes.tsv" in x for x in names)
+    has_archive = any(x.endswith((".tar", ".tar.gz", ".tgz")) for x in names)
     has_h5 = any(x.endswith(".h5") or x.endswith(".h5.gz") for x in names)
     has_h5ad = any(x.endswith(".h5ad") for x in names)
     has_r_object = any(x.endswith((".rds", ".rda", ".h5seurat")) for x in names)
@@ -44,6 +48,10 @@ def classify_files(items: list[str]) -> dict:
     formats = []
     if has_matrix and has_barcodes and has_features:
         formats.append("10x MEX")
+    if has_nonstandard_matrix and has_nonstandard_barcodes and has_nonstandard_genes:
+        formats.append("10x non-standard MEX")
+    elif has_archive:
+        formats.append("compressed GEO archive requiring extraction")
     if has_h5:
         formats.append("10x HDF5 or generic HDF5")
     if has_h5ad:
@@ -54,7 +62,9 @@ def classify_files(items: list[str]) -> dict:
         formats.append("loom")
     if has_fastq or accessions["SRA Run"] or accessions["SRA Project"]:
         formats.append("FASTQ/SRA raw reads")
-    if has_table and not (has_matrix and has_barcodes and has_features):
+    has_standard_mex = has_matrix and has_barcodes and has_features
+    has_nonstandard_mex = has_nonstandard_matrix and has_nonstandard_barcodes and has_nonstandard_genes
+    if has_table and not (has_standard_mex or has_nonstandard_mex):
         formats.append("flat expression/result table")
     if has_tcr_bcr:
         formats.append("TCR/BCR contig/clonotype files")
@@ -63,7 +73,7 @@ def classify_files(items: list[str]) -> dict:
 
     direct = "uncertain"
     needs_rebuild = False
-    if any(x in formats for x in ["10x MEX", "10x HDF5 or generic HDF5", "AnnData h5ad", "R/Seurat object", "loom"]):
+    if any(x in formats for x in ["10x MEX", "10x non-standard MEX", "10x HDF5 or generic HDF5", "AnnData h5ad", "R/Seurat object", "loom"]):
         direct = "yes"
     if "FASTQ/SRA raw reads" in formats and len(formats) == 1:
         direct = "no"
@@ -74,6 +84,10 @@ def classify_files(items: list[str]) -> dict:
     recommendations = []
     if "10x MEX" in formats:
         recommendations.append("Use Seurat::Read10X or scanpy.read_10x_mtx.")
+    if "10x non-standard MEX" in formats:
+        recommendations.append("Use input_type=10x_nonstandard with scripts/course_adapted/01_seurat_v5_core_pipeline.R or 00_multi_sample_merge_harmony.R; the reader uses Matrix::readMM plus barcode/gene TSV files.")
+    if "compressed GEO archive requiring extraction" in formats:
+        recommendations.append("Extract archives into a project input folder, then inspect for standard 10x MEX, non-standard count_matrix_* MEX, H5, RDS, h5ad, or plain matrices before choosing the reader.")
     if "10x HDF5 or generic HDF5" in formats:
         recommendations.append("Use Seurat::Read10X_h5 for 10x H5 or scanpy.read_10x_h5 after confirming structure.")
     if "AnnData h5ad" in formats:
@@ -90,6 +104,8 @@ def classify_files(items: list[str]) -> dict:
         risks.append("Sample metadata/group design not detected.")
     if needs_rebuild:
         risks.append("Raw-read reconstruction requires reference genome, chemistry, and compute resources.")
+    if has_archive:
+        risks.append("Archive contents must be inspected after extraction; file extension alone is not enough to choose Seurat/Scanpy reader.")
     if has_h5ad or has_r_object:
         risks.append("Processed objects may not retain raw counts needed for DE, CellChat, CNV, or deconvolution.")
     if not formats:

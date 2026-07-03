@@ -28,6 +28,8 @@ tools:
   - create_project
   - list_result_files
   - read_report
+  - register_input_dataset
+  - validate_data_analysis_qc
   - get_job_status
   - read_job_log
   - list_geo_supplementary_files
@@ -58,11 +60,14 @@ workflow:
       - start_extract_workspace_archive_if_needed
       - get_job_status_until_finished
       - inspect_downloaded_files
+      - register_input_dataset_if_manual_input
+      - validate_data_analysis_qc
       - start_seurat_basic_or_start_scanpy_basic
       - get_job_status_until_finished
   seurat_full:
     order:
       - render_workflow_scripts
+      - validate_data_analysis_qc
       - start_seurat_basic
       - get_job_status_until_finished
       - validate_result_bundle

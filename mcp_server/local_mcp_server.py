@@ -62,11 +62,6 @@ PIPELINES = [
     "async_jobs",
 ]
 
-SYNTHETIC_TEST_PIPELINES = [
-    "demo_pipeline",
-    "full_workflow_selftest",
-]
-
 FORBIDDEN_PATH_HINTS = [
     "desktop",
     "downloads",
@@ -607,15 +602,15 @@ def tool_ping() -> dict[str, Any]:
 
 def tool_list_available_pipelines() -> dict[str, Any]:
     job_id = uuid.uuid4().hex
-    log_file = log_event("list_available_pipelines", job_id, {"pipelines": PIPELINES, "synthetic_test_pipelines": SYNTHETIC_TEST_PIPELINES})
+    log_file = log_event("list_available_pipelines", job_id, {"pipelines": PIPELINES})
     return response_payload(
         status="ok",
         project_id=None,
         job_id=job_id,
         output_dir=OUTPUTS_DIR,
         log_file=log_file,
-        message="Real-data whitelisted pipelines returned. Synthetic demo/selftest tools are hidden from the normal pipeline list and require explicit confirmation.",
-        data={"pipelines": PIPELINES, "synthetic_test_pipelines": SYNTHETIC_TEST_PIPELINES},
+        message="Real-data whitelisted pipelines returned. Local synthetic generators are not available through MCP.",
+        data={"pipelines": PIPELINES},
     )
 
 
@@ -645,88 +640,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
-def tool_run_demo_pipeline(project_id: str, confirm_synthetic: bool = False) -> dict[str, Any]:
-    job_id = uuid.uuid4().hex
-    project_dir = require_project_dir(project_id, create=True)
-    if not confirm_synthetic:
-        log_file = log_event("run_demo_pipeline", job_id, {"project_id": project_id, "status": "blocked_requires_confirmation"})
-        return response_payload(
-            status="error",
-            project_id=safe_slug(project_id),
-            job_id=job_id,
-            output_dir=project_dir,
-            log_file=log_file,
-            message="Synthetic demo generation is disabled by default. For real analysis, download/upload data into workspace/inputs and call run_seurat_basic or run_scanpy_basic. To intentionally test demo output, call run_demo_pipeline with confirm_synthetic=true.",
-            warnings=["This tool must not be used as evidence that real GEO data were analyzed."],
-        )
-    tables_dir = project_dir / "tables"
-
-    write_csv(
-        tables_dir / "marker_genes.csv",
-        [
-            {"cluster": "0", "cell_type_hint": "Macrophage", "gene": "LYZ", "avg_log2FC": 2.1, "p_val_adj": 0.001},
-            {"cluster": "1", "cell_type_hint": "Fibroblast", "gene": "COL1A1", "avg_log2FC": 2.4, "p_val_adj": 0.002},
-            {"cluster": "2", "cell_type_hint": "T cell", "gene": "CD3D", "avg_log2FC": 1.8, "p_val_adj": 0.005},
-        ],
-    )
-    write_csv(
-        tables_dir / "deg_results.csv",
-        [
-            {"gene": "IL1B", "cell_type": "Macrophage", "comparison": "disease_vs_control", "log2FC": 1.5, "p_val_adj": 0.01},
-            {"gene": "COL3A1", "cell_type": "Fibroblast", "comparison": "disease_vs_control", "log2FC": 1.2, "p_val_adj": 0.03},
-        ],
-    )
-    write_csv(
-        tables_dir / "enrichment_results.csv",
-        [
-            {"term": "inflammatory response", "p_adj": 0.01, "genes": "IL1B;LYZ"},
-            {"term": "extracellular matrix organization", "p_adj": 0.02, "genes": "COL1A1;COL3A1"},
-        ],
-    )
-    write_csv(
-        tables_dir / "celltype_proportion.csv",
-        [
-            {"sample_id": "S1", "condition": "disease", "cell_type": "Macrophage", "proportion": 0.32},
-            {"sample_id": "S2", "condition": "control", "cell_type": "Macrophage", "proportion": 0.18},
-            {"sample_id": "S1", "condition": "disease", "cell_type": "Fibroblast", "proportion": 0.41},
-            {"sample_id": "S2", "condition": "control", "cell_type": "Fibroblast", "proportion": 0.28},
-        ],
-    )
-    report = project_dir / "report_skeleton.md"
-    report.write_text(
-        """# Demo scRNA-seq Mechanism Report Skeleton
-
-## Summary
-
-This demo result is synthetic and contains no patient data. It is only used to test platform-to-local MCP connectivity.
-
-## Observed Patterns
-
-- Macrophage markers and IL1B suggest an inflammatory signal.
-- Fibroblast markers and extracellular-matrix enrichment suggest stromal remodeling.
-- Cell type proportions show a larger macrophage/fibroblast fraction in the demo disease sample.
-
-## Safety
-
-These are generated demo files, not clinical evidence.
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    run_log = project_dir / "run_log.txt"
-    run_log.write_text(f"{utc_now()} demo pipeline completed for {project_id}\n", encoding="utf-8")
-    log_file = log_event("run_demo_pipeline", job_id, {"project_id": project_id, "status": "ok"})
-    return response_payload(
-        status="ok",
-        project_id=project_id,
-        job_id=job_id,
-        output_dir=project_dir,
-        log_file=log_file,
-        message="Demo pipeline generated lightweight result files.",
-        data={"files": [p.name for p in sorted(tables_dir.glob("*.csv"))] + [report.name, run_log.name]},
-    )
 
 
 def tool_list_result_files(project_id: str) -> dict[str, Any]:
@@ -1123,67 +1036,6 @@ def safe_tool_status(tool_name: str, callback: Callable[..., dict[str, Any]], **
         return {"status": "error", "message": f"{tool_name} returned a non-dict result", "data": {"repr": repr(result)}}
     except Exception as exc:
         return {"status": "error", "message": f"{tool_name} failed: {exc}", "data": {}}
-
-
-def write_selftest_10x_input() -> dict[str, Any]:
-    out = INPUTS_DIR / "mcp_selftest_10x_three_groups"
-    out.mkdir(parents=True, exist_ok=True)
-    for path in out.glob("*"):
-        if path.is_file():
-            path.unlink()
-    genes = [
-        "CD3D", "CD3E", "TRAC", "NKG7", "MS4A1", "CD79A", "CD79B", "CD74",
-        "LYZ", "LST1", "AIF1", "S100A8", "COL1A1", "COL1A2", "DCN", "LUM",
-        "PECAM1", "VWF", "MKI67", "TOP2A", "MALAT1", "ACTB", "GAPDH", "RPLP0",
-        "CXCL12", "CXCR4", "CCL2", "CCR2", "IL6", "IL6R", "IL6ST", "VEGFA", "KDR",
-        "SPP1", "CD44", "FN1", "ITGA5", "ITGB1", "MMP9", "TGFB1", "TGFBR1", "TGFBR2",
-    ]
-    groups = ["T_cell"] * 80 + ["B_cell"] * 80 + ["Myeloid"] * 80
-    boosts = {
-        "T_cell": {"CD3D", "CD3E", "TRAC", "NKG7", "CXCR4", "IL6R", "CD44", "ITGB1"},
-        "B_cell": {"MS4A1", "CD79A", "CD79B", "CD74", "CXCR4", "IL6R", "ITGB1"},
-        "Myeloid": {"LYZ", "LST1", "AIF1", "S100A8", "CCL2", "MMP9", "IL6", "TGFB1", "SPP1"},
-    }
-    shared_lr = {"CXCL12", "VEGFA", "FN1", "ITGA5", "TGFBR1", "TGFBR2"}
-    housekeeping = {"MALAT1", "ACTB", "GAPDH", "RPLP0"}
-    entries: list[tuple[int, int, int]] = []
-    for cell_index, group in enumerate(groups, start=1):
-        for gene_index, gene in enumerate(genes, start=1):
-            value = 1
-            if gene in boosts[group]:
-                value += 10 + (cell_index % 3)
-            if gene in shared_lr:
-                value += 3 + (cell_index % 2)
-            if gene in housekeeping:
-                value += 4
-            if value > 0:
-                entries.append((gene_index, cell_index, value))
-    with gzip.open(out / "matrix.mtx.gz", "wt", encoding="utf-8") as handle:
-        handle.write("%%MatrixMarket matrix coordinate integer general\n")
-        handle.write("% generated by scMechanism local MCP selftest\n")
-        handle.write(f"{len(genes)} {len(groups)} {len(entries)}\n")
-        for row, col, value in entries:
-            handle.write(f"{row} {col} {value}\n")
-    with gzip.open(out / "features.tsv.gz", "wt", encoding="utf-8") as handle:
-        for gene in genes:
-            handle.write(f"{gene}\t{gene}\tGene Expression\n")
-    with gzip.open(out / "barcodes.tsv.gz", "wt", encoding="utf-8") as handle:
-        for i in range(len(groups)):
-            handle.write(f"SELFTEST_{i + 1:03d}-1\n")
-    metadata = out / "metadata.csv"
-    with metadata.open("w", encoding="utf-8") as handle:
-        handle.write("barcode,known_group,sample_id,batch,condition,stage\n")
-        for i, group in enumerate(groups):
-            handle.write(f"SELFTEST_{i + 1:03d}-1,{group},selftest_1,batch1,test,{group}\n")
-    summary = {
-        "input_path": "mcp_selftest_10x_three_groups",
-        "metadata_path": "mcp_selftest_10x_three_groups/metadata.csv",
-        "cells": len(groups),
-        "genes": len(genes),
-        "groups": sorted(set(groups)),
-    }
-    (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    return summary
 
 
 def render_seurat_workflow_scripts(
@@ -2030,139 +1882,6 @@ def tool_start_monocle3(
     )
 
 
-def tool_run_full_workflow_selftest(project_id: str = "mcp_selftest_full_modules", timeout_seconds: int = 7200, confirm_synthetic: bool = False) -> dict[str, Any]:
-    job_id = uuid.uuid4().hex
-    project_slug = safe_slug(project_id, "mcp_selftest_full_modules")
-    project_dir = require_project_dir(project_slug, create=True)
-    if not confirm_synthetic:
-        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "blocked_requires_confirmation"})
-        return response_payload(
-            status="error",
-            project_id=project_slug,
-            job_id=job_id,
-            output_dir=project_dir,
-            log_file=log_file,
-            message="Synthetic full workflow selftest is disabled by default. For real testing, call list_geo_supplementary_files/download_geo_supplementary or download_to_workspace, then run_seurat_basic/run_scanpy_basic on the downloaded input. To intentionally run the synthetic selftest, pass confirm_synthetic=true.",
-            warnings=["This selftest creates synthetic data and must not be treated as real GEO analysis."],
-        )
-    input_summary = write_selftest_10x_input()
-    steps: list[dict[str, Any]] = []
-
-    seurat = tool_run_seurat_basic(
-        project_id=project_slug,
-        input_path=input_summary["input_path"],
-        species="human",
-        input_type="10x_mtx",
-        metadata_path=input_summary["metadata_path"],
-        sample_id="mcp_selftest",
-        batch_col="batch",
-        condition_col="known_group",
-        reference_name="hpca",
-        run_annotation=True,
-        run_marker_enrichment=True,
-        timeout_seconds=timeout_seconds,
-    )
-    steps.append({"step": "seurat_singler_marker", "status": seurat.get("status"), "message": seurat.get("message")})
-    if seurat.get("status") != "ok":
-        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "seurat_singler_marker"})
-        return response_payload(
-            status="error",
-            project_id=project_slug,
-            job_id=job_id,
-            output_dir=project_dir,
-            log_file=log_file,
-            message="Full workflow selftest failed at Seurat/SingleR/marker step.",
-            warnings=["Read nested run logs in the project output directory."],
-            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
-        )
-
-    cellchat = tool_run_cellchat(
-        project_id=project_slug,
-        approval_token="APPROVED_CELLCHAT",
-        celltype_col="known_group",
-        species="human",
-        min_cells=10,
-        timeout_seconds=timeout_seconds,
-    )
-    steps.append({"step": "cellchat", "status": cellchat.get("status"), "message": cellchat.get("message")})
-    if cellchat.get("status") != "ok":
-        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "cellchat"})
-        return response_payload(
-            status="error",
-            project_id=project_slug,
-            job_id=job_id,
-            output_dir=project_dir,
-            log_file=log_file,
-            message="Full workflow selftest failed at CellChat step.",
-            warnings=["Read nested run logs in the project output directory."],
-            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
-        )
-
-    monocle3 = tool_run_monocle3(
-        project_id=project_slug,
-        approval_token="APPROVED_MONOCLE3",
-        celltype_col="known_group",
-        subset_query='known_group %in% c("T_cell","B_cell","Myeloid")',
-        root_query='known_group == "T_cell"',
-        timeout_seconds=timeout_seconds,
-    )
-    steps.append({"step": "monocle3", "status": monocle3.get("status"), "message": monocle3.get("message")})
-    if monocle3.get("status") != "ok":
-        log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "failed", "failed_step": "monocle3"})
-        return response_payload(
-            status="error",
-            project_id=project_slug,
-            job_id=job_id,
-            output_dir=project_dir,
-            log_file=log_file,
-            message="Full workflow selftest failed at Monocle3 step.",
-            warnings=["Read nested run logs in the project output directory."],
-            data={"input": input_summary, "steps": steps, "files": collect_project_files(project_dir)},
-        )
-
-    quality = tool_validate_result_bundle(project_id=project_slug)
-    steps.append({"step": "result_quality", "status": quality.get("status"), "message": quality.get("message")})
-
-    report = project_dir / "full_workflow_selftest_report.md"
-    report.write_text(
-        "\n".join(
-            [
-                "# Local MCP Full Workflow Selftest",
-                "",
-                "## Input",
-                f"- Cells: {input_summary['cells']}",
-                f"- Genes: {input_summary['genes']}",
-                f"- Groups: {', '.join(input_summary['groups'])}",
-                "",
-                "## Step Status",
-                *[f"- {step['step']}: {step['status']} - {step['message']}" for step in steps],
-                "",
-                "## Key Outputs",
-                "- seurat_basic/objects/processed_seurat.rds",
-                "- singler_annotation/objects/seurat_singleR_annotated.rds",
-                "- marker_enrichment/tables/cluster_markers_top.csv",
-                "- marker_enrichment/tables/GO_BP_top_markers.csv",
-                "- cellchat/tables/cellchat_ligand_receptor.csv",
-                "- monocle3/tables/pseudotime.csv",
-                "- result_quality_check.md",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    log_file = log_event("run_full_workflow_selftest", job_id, {"project_id": project_slug, "status": "ok"})
-    return response_payload(
-        status="ok",
-        project_id=project_slug,
-        job_id=job_id,
-        output_dir=project_dir,
-        log_file=log_file,
-        message="Full local MCP workflow selftest completed.",
-        warnings=["This is a synthetic selftest dataset and is not biological evidence."],
-        data={"input": input_summary, "steps": steps, "report": str(report), "files": collect_project_files(project_dir)},
-    )
-
-
 def tool_list_workspace_files(relative_path: str = "", max_files: int = 200) -> dict[str, Any]:
     job_id = uuid.uuid4().hex
     root = WORKSPACE_ROOT if not relative_path else validate_workspace_path(relative_path, must_exist=True, allow_dir=True)
@@ -2409,7 +2128,6 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "ping": tool_ping,
     "list_available_pipelines": tool_list_available_pipelines,
     "create_project": tool_create_project,
-    "run_demo_pipeline": tool_run_demo_pipeline,
     "list_result_files": tool_list_result_files,
     "read_report": tool_read_report,
     "get_job_status": tool_get_job_status,
@@ -2433,7 +2151,6 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "start_cellchat": tool_start_cellchat,
     "run_monocle3": tool_run_monocle3,
     "start_monocle3": tool_start_monocle3,
-    "run_full_workflow_selftest": tool_run_full_workflow_selftest,
     "list_workspace_files": tool_list_workspace_files,
     "read_workspace_file": tool_read_workspace_file,
     "write_workspace_file": tool_write_workspace_file,

@@ -1,0 +1,353 @@
+# scMechanism-Agent
+
+一个面向单细胞转录组机制发现的多智能体框架，通过工具增强的科学推理辅助完成数据诊断、分析规划、代码生成、结果验证与机制解释。
+
+---
+
+## 项目概述
+
+**scMechanism-Agent** 是一个多智能体系统，旨在帮助研究人员将单细胞转录组数据转化为结构化的生物学机制假说。
+
+不同于传统 scRNA-seq 分析流程主要输出描述性结果，例如差异基因、细胞聚类、富集分析表和可视化图，scMechanism-Agent 更强调通过以下能力生成具有机制依据的生物学解释：
+
+- 基于大语言模型（LLM）的科学推理
+- 生物信息学工具与数据库，包括 GO、KEGG 和文献资源
+- 结构化的多步骤分析规划
+- 可复现代码生成与结果验证
+
+scMechanism-Agent 的目标不是替代生物信息学分析平台，而是帮助临床和生物医学研究人员诊断数据可用性、选择具有科学合理性的分析策略、生成可复现工作流，并将结果组织为可解释的生物学机制叙事。
+
+---
+
+## 临床科研痛点
+
+临床研究人员经常能够在 GEO 或其他公共数据库中发现潜在可用的 scRNA-seq 数据集，但在实际使用时通常面临以下问题：
+
+- 难以判断可用文件是原始测序数据、10x 矩阵、处理后的 Seurat/h5ad 对象，还是下游结果表格
+- 难以判断疾病/对照标签和样本层面元数据是否足够支持后续分析
+- 难以确定某个数据集适合开展哪些科学上合理的分析
+- 难以将公开示例代码转化为本地可复现工作流
+- 难以判断计算结果在多大程度上可以支持疾病机制假说
+
+scMechanism-Agent 通过数据诊断、工作流规划、代码生成、结果检查和机制导向报告撰写来支持上述过程。
+
+---
+
+## 核心功能
+
+- 将临床科研问题解析为可分析的单细胞任务
+- 诊断 GEO 补充文件列表和本地文件格式
+- 为以下数据类型生成分析方案：
+  - 处理后的表达矩阵
+  - 10x Genomics 数据
+  - h5ad 对象
+  - Seurat RDS 对象
+  - FASTQ/SRA 工作流
+- 生成或渲染可复现代码，支持：
+  - Seurat
+  - Scanpy
+  - CellChat
+  - Monocle3
+  - SingleR
+- 检查结果目录中的关键证据，包括：
+  - 元数据完整性
+  - Marker 基因证据
+  - 差异表达结果
+  - 富集分析输出
+  - CellChat 结果
+  - 拟时序结果
+  - 图形证据
+- 起草分析导向的科研文本，包括：
+  - Methods
+  - Results
+  - Figure legends
+  - Limitations
+  - Validation suggestions
+
+---
+
+## 范围与限制
+
+scMechanism-Agent **不保证**：
+
+- 自动完成所有数据集的平台端重新分析
+- 每一个 GEO 数据集都是完整且可分析的
+- 在缺少参考基因组、测序化学体系和计算资源选择的情况下自动重建 FASTQ/SRA 工作流
+- 提供临床诊断或治疗建议
+- 将计算得到的细胞通讯、拟时序或 CNV 推断结果视为实验证据
+
+该框架主要用于科研辅助和机制假说生成。所有生物学解释均应由领域专家审查，并在条件允许时通过独立实验或外部数据进行验证。
+
+---
+
+## 运行环境要求
+
+- Python 3.10 或更新版本
+- R 4.3 或更新版本
+- Conda 或其他 Python 环境管理工具
+- 具体 R 和 Python 依赖包取决于所选脚本或模板
+
+环境和分析流程相关说明位于：
+
+```text
+references/environment/requirements.md
+references/environment/path-setup.md
+references/seurat_pipeline_rules.md
+references/scanpy_pipeline_rules.md
+```
+
+在运行基于 Seurat V5 课程改编的模块之前，可以使用以下命令检查本地环境：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\check_environment.ps1 -CondaEnv seuratv5-course-py
+```
+
+如果缺少必要工具或软件包，可以运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\env_setup\install_environment.ps1 -InstallRPackages -InstallPythonEnv
+```
+
+Python 和 Scanpy 用户可以通过以下命令创建 conda 环境：
+
+```powershell
+conda env create -f .\environment.yml
+conda activate scmechanism-agent
+```
+
+---
+
+## 仓库结构
+
+```text
+SKILL.md
+README.md
+CODEBASE_SUMMARY.md
+environment.yml
+agents/
+references/
+templates/
+examples/
+scripts/
+  env_setup/
+  course_source/
+  course_adapted/
+```
+
+### 主要目录说明
+
+| 目录                      | 说明                                            |
+| ------------------------- | ----------------------------------------------- |
+| `agents/`                 | 智能体定义和推理模块                            |
+| `references/`             | 环境说明、流程规则和方法学参考                  |
+| `templates/`              | 可复用的 Scanpy 和报告模板                      |
+| `examples/`               | 示例输入和验证案例                              |
+| `scripts/env_setup/`      | 环境检查与安装脚本                              |
+| `scripts/course_source/`  | 由 Seurat V5 课程材料整理得到的英文命名参考脚本 |
+| `scripts/course_adapted/` | 可运行、已参数化的 Seurat 分析脚本              |
+
+---
+
+## 主要脚本用法
+
+### 1. 诊断 GEO 输入文件
+
+```bash
+python scripts/diagnose_geo_inputs.py \
+  --file-list supplementary_files.txt \
+  --out-json diagnosis.json \
+  --out-md diagnosis.md
+```
+
+### 2. 生成分析方案
+
+```bash
+python scripts/build_analysis_plan.py \
+  --diagnosis-json diagnosis.json \
+  --question "lung cancer immune microenvironment" \
+  --organism human \
+  --comparison "tumor vs normal" \
+  --out-md analysis_plan.md
+```
+
+### 3. 渲染 Seurat V5 核心分析流程
+
+```bash
+python scripts/render_template.py \
+  --template scripts/course_adapted/01_seurat_v5_core_pipeline.R \
+  --out run/01_seurat_v5_core_pipeline.R \
+  --define INPUT_PATH=/data/GSE \
+  --define OUTPUT_DIR=analysis/GSE
+```
+
+### 4. 渲染 SingleR 细胞注释流程
+
+```bash
+python scripts/render_template.py \
+  --template scripts/course_adapted/05_singler_cell_annotation.R \
+  --out run/05_singler_cell_annotation.R \
+  --define INPUT_RDS=analysis/GSE/objects/processed_seurat.rds \
+  --define OUTPUT_DIR=analysis/GSE/singler
+```
+
+### 5. 渲染可选 Scanpy 模块
+
+```bash
+python scripts/render_template.py \
+  --template templates/scanpy_batch_annotation_enrichment_template.py \
+  --out run/scanpy_optional_modules.py \
+  --define INPUT_H5AD=analysis/GSE/objects/processed.h5ad \
+  --define OUTPUT_DIR=analysis/GSE/scanpy_optional
+```
+
+### 6. 验证分析结果目录
+
+```bash
+python scripts/validate_result_bundle.py \
+  --result-dir analysis/GSE \
+  --out-md result_quality_check.md
+```
+
+### 7. 生成分析报告
+
+```bash
+python scripts/write_analysis_report.py \
+  --result-dir analysis/GSE \
+  --metadata-json analysis/GSE/report_metadata.json \
+  --out-md analysis/GSE/manuscript_report.md
+```
+
+### 8. 验证完整工作流
+
+```bash
+python scripts/validate_full_workflow.py \
+  --project-root . \
+  --example-root analysis/GSE \
+  --out-md analysis/GSE/full_workflow_validation.md
+```
+
+---
+
+## Seurat V5 课程代码改编
+
+Seurat V5 课程代码已被整理为英文文件名，存放于 `scripts/course_source/`，并进一步改编为可运行脚本，存放于 `scripts/course_adapted/`。
+
+主要改编模块包括：
+
+- `scripts/course_adapted/01_seurat_v5_core_pipeline.R`  
+  改编自 10x 导入、H5 导入、质控、标准化、DecontX、Harmony 和聚类模块。
+
+- `scripts/course_adapted/00_multi_sample_merge_harmony.R`  
+  改编自多样本导入、合并和 Harmony 整合模块。
+
+- `scripts/course_adapted/02_marker_enrichment_from_seurat.R`  
+  改编自 Marker 检测和 GO/KEGG 富集模块。
+
+- `scripts/course_adapted/03_cellchat_from_seurat.R`  
+  改编自 CellChat 分析模块。
+
+- `scripts/course_adapted/04_monocle3_from_seurat.R`  
+  改编自 Monocle3 拟时序分析模块。
+
+- `scripts/course_adapted/05_singler_cell_annotation.R`  
+  改编自 SingleR 细胞注释模块。
+
+改编后的脚本均已参数化，不再保留交互式工作目录选择、固定对象名、中文输出名或示例数据专属阈值。
+
+---
+
+## 模板说明
+
+仓库中包含两类可复用代码资源：
+
+- `scripts/course_adapted/`  
+  来源于 Seurat V5 课程材料的可运行 Seurat 模块。
+
+- `templates/`  
+  用于 Scanpy 工作流、可选下游模块和报告框架的通用模板。
+
+当两者均可使用时，建议：
+
+- Seurat V5 课程衍生工作流优先使用 `scripts/course_adapted/`
+- Scanpy 工作流和轻量级报告模板优先使用 `templates/`
+
+---
+
+## 工作流设计
+
+scMechanism-Agent 将研究流程拆分为六个层级：
+
+1. 数据诊断
+2. 分析规划
+3. 代码生成
+4. 外部执行
+5. 结果验证
+6. 机制解释
+
+高计算量分析步骤保留在外部环境中执行，以保证流程可审计和可复现。该框架负责协调分析步骤、生成可复现脚本、验证可用输出，并辅助形成结构化科学解释。
+
+---
+
+## 示例应用场景
+
+`examples/` 目录包含以下场景：
+
+1. 仅提供临床研究问题
+2. 10x MEX 文件
+3. h5ad/H5 文件
+4. Seurat RDS 文件
+5. 仅 FASTQ/SRA 数据集
+6. 上传 Marker 表格
+7. 上传 CellChat 结果
+
+这些示例用于展示框架如何诊断数据结构、选择合适分析策略并生成可复现输出。
+
+---
+
+## 推荐工作流
+
+典型流程如下：
+
+```text
+临床研究问题
+    ↓
+GEO 或本地文件诊断
+    ↓
+分析可行性评估
+    ↓
+可复现分析方案
+    ↓
+Seurat 或 Scanpy 代码生成
+    ↓
+外部执行
+    ↓
+结果包验证
+    ↓
+机制导向报告撰写
+```
+
+---
+
+## 安全与隐私
+
+除非已经完成适当的去标识化、机构审批和数据治理流程，否则用户不应上传敏感临床数据。
+
+该框架用于生物医学科研辅助，不提供临床诊断、治疗决策或针对患者个体的医学建议。
+
+更多安全、隐私和数据处理边界说明见：
+
+```text
+SECURITY_AND_PRIVACY.md
+```
+
+---
+
+## 许可证
+
+请在公开发布前为该仓库指定许可证。
+
+---
+
+## 引用
+
+如果该框架被用于科研工作，请在相关论文或项目中引用本仓库；如后续有配套论文发表，请引用相应论文。

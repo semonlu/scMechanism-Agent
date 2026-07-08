@@ -16,6 +16,9 @@ logs/session_info.txt
 logs/commands.txt
 data_input_manifest.json
 data_analysis_qc.md
+tables/workflow_step_audit.tsv
+tables/resolution_sweep.tsv
+tables/cluster_marker_audit.tsv
 ```
 
 ## Optional Module Outputs

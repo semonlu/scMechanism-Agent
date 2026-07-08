@@ -54,6 +54,7 @@ Scanpy 批次/注释/富集: templates/scanpy_batch_annotation_enrichment_templa
 8. 单细胞分群聚类和分辨率检查
    课程代码: `15_clustering_resolution.R`
    调用: `01_seurat_v5_core_pipeline.R`
+   输出要求: `resolution_sweep.tsv` 和 `cluster_marker_audit.tsv`；大群注释至少扫 0.1、0.3、0.5、0.8
 
 9. Marker 检测
    课程代码: `23_marker_detection_methods.R`
@@ -103,6 +104,7 @@ Monocle3 R: scripts/course_adapted/04_monocle3_from_seurat.R
 9. 空间转录组数据不能套用普通 scRNA-seq 模板；先要求平台、组织切片、坐标和图像信息。
 10. CellChat/Monocle3 必须先过“下游模块确认门”。没有使用者确认时，不能生成运行命令。
 11. Seurat/Scanpy 分析必须先通过数据输入同步检查；如果项目已有 manifest 且实际 input_path 不匹配，必须停止。
+12. 亚群分析必须先 subset 已注释大群，并在 subset 对象上重新 HVG、scale、PCA、neighbors、clustering 和 UMAP。
 
 ## 输出要求
 

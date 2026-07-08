@@ -30,7 +30,9 @@ SECTIONS = [
         "如有批次，先可视化批次结构，再决定 Harmony/CCA/SCVI 等整合方案。"
     ]),
     ("E. 聚类与细胞注释", [
-        "扫多个 resolution，结合 clustree、marker coherence 和组织背景选择粒度。",
+        "大群注释先扫 0.1、0.3、0.5、0.8，输出 resolution_sweep.tsv。",
+        "结合 cluster 数量、marker coherence、组织背景和 cluster_marker_audit.tsv 选择粒度。",
+        "亚群分析必须 subset 已注释大群后重新 HVG、scale、PCA、neighbors、clustering 和 UMAP。",
         "以 marker 证据为主，SingleR/SCINA/TransferData/scPred/CellTypist 为辅助。",
         "输出 annotation_evidence.tsv，保留 uncertain/ambiguous 标签。"
     ]),
@@ -58,7 +60,7 @@ SECTIONS = [
     ("K. 预期结果文件", [
         "data_input_manifest.json 和 data_analysis_qc.md 必须记录并确认分析输入。",
         "figures/: QC、UMAP、marker、annotation、DE/enrichment、CellChat、pseudotime 图。",
-        "tables/: metadata、qc_summary、markers、deg、enrichment、cell_proportion、module_status。",
+        "tables/: metadata、qc_summary、workflow_step_audit、resolution_sweep、cluster_marker_audit、markers、deg、enrichment、cell_proportion、module_status。",
         "objects/: processed Seurat RDS 或 h5ad；logs/: commands、sessionInfo、package versions。"
     ]),
     ("L. 风险与限制", [

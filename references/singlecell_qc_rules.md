@@ -1,27 +1,64 @@
 # Single-cell QC Rules
 
-QC 阈值必须来自当前数据分布、组织背景、物种、平台和预期细胞类型。课程脚本中的阈值只能作为示例，不能直接套用。
+QC thresholds must come from the current data distribution, tissue background, organism, platform, and expected cell types. Course-script values are examples only and must not be copied as universal defaults.
 
-## 常用指标
+## Core QC Metrics
 
-| 指标 | 含义 | 风险提示 |
+| Metric | Meaning | Review risk |
 |---|---|---|
-| `nFeature_RNA` | 每个细胞检测到的基因数 | 过低可能为空滴/低质量；过高可能双细胞 |
-| `nCount_RNA` | 每个细胞 UMI/reads 总数 | 过低低质量；过高可能双细胞或高 RNA content 细胞 |
-| `percent.mt` | 线粒体比例 | 高值提示应激/死亡；组织和物种前缀不同 |
-| `percent.ribo` | 核糖体比例 | 高值可能反映细胞状态或低质量，需结合组织 |
-| `percent.hb` | 血红蛋白比例 | 血液污染或红细胞相关信号 |
-| doublet score | 双细胞风险 | 应按样本或加载批次评估 |
-| batch | 批次/样本效应 | 不应在未检查前盲目整合 |
+| `nFeature_RNA` | Detected genes per cell | Very low suggests empty droplets or low-quality cells; very high can indicate doublets or high-RNA-content cells. |
+| `nCount_RNA` | UMI/read count per cell | Very low suggests poor quality; very high can indicate doublets or large/high-RNA cells. |
+| `percent.mt` | Mitochondrial fraction | High values can indicate dying, damaged, stressed, or metabolically active cells. Do not apply a fixed 5% or 10% cutoff blindly. |
+| `percent.ribo` | Ribosomal fraction | Can reflect technical noise, low quality, or biological state; review by tissue and cluster. |
+| `percent.hb` | Hemoglobin fraction | Suggests blood contamination, red-cell carryover, or ambient RNA. |
+| doublet score | Doublet risk | Evaluate by sample or loading batch; high-scoring clusters need marker review. |
+| batch/sample | Technical or biological source | Do not integrate blindly before checking whether group and batch are confounded. |
 
-## 推荐输出
+## Required QC Outputs
 
-- QC 前后小提琴图。
-- nCount vs percent.mt、nCount vs nFeature 散点图。
-- 每个样本过滤前后细胞数。
-- 过滤规则和阈值解释。
-- doublet 方法、预期双细胞率、每样本移除数。
+- Pre-filter and post-filter violin plots for `nFeature_RNA`, `nCount_RNA`, `percent.mt`, and when available `percent.ribo`/`percent.hb`.
+- Scatter plots: `nCount_RNA` vs `nFeature_RNA`, and `nCount_RNA` vs `percent.mt`.
+- Per-sample pre/post cell retention table.
+- A threshold table explaining each filter and why it was chosen.
+- Doublet method/status table if doublet detection is possible.
+- Ambient RNA, hemoglobin, ribosomal, mitochondrial, and cell-cycle review notes when suspicious clusters appear.
+
+## Threshold Selection
+
+Use common values only as starting points:
+
+- `min.features`: often 200 to 300, but lower may be needed for low-RNA cell types or small validation data.
+- `max.features`: often 2,500 to 6,000 or higher depending on platform, tissue, and cell size.
+- `percent.mt`: often 5% to 25%, but tissue and preservation method matter.
+- `min.cells` per gene: often 3.
+- `min.umi`: often 500 or 1,000 when sequencing depth supports it.
+
+Choose thresholds after looking at each sample separately. If uncertain, use permissive filtering first, then re-check whether low-quality clusters remain after clustering.
+
+## Ambient RNA And Contamination
+
+Raise an ambient RNA warning when:
+
+- Red-cell, epithelial, immune, or other high-expression markers appear weakly across many unrelated clusters.
+- Hemoglobin genes such as `HBA1`, `HBA2`, `HBB`, or `HBD` are widespread outside erythroid-like cells.
+- A high-expression marker appears everywhere rather than in a coherent cell population.
+
+Possible actions include SoupX/DecontX, removing obvious contamination-driven genes from interpretation, or marking the analysis as limited when raw droplets are unavailable.
+
+## Doublet Review
+
+Doublets should be evaluated per sample or loading batch whenever raw counts and metadata support it.
+
+Review:
+
+- Doublet score distribution.
+- Predicted doublets on UMAP.
+- Clusters co-expressing mutually exclusive lineage markers.
+- Per-sample doublet rates.
+- Whether the workflow was rerun after doublet removal.
+
+After removing predicted doublets, rerun normalization, HVG selection, scaling, PCA, neighbors, clustering, and UMAP.
 
 ## Course-Derived Notes
 
-课程脚本使用 `VlnPlot()`、`FeatureScatter()` 和 `subset()`，示例阈值包括 `nCount_RNA <= 25000`、`nFeature_RNA <= 5000`、`percent.mt <= 25`、`percent.rb <= 40`。这些值不是通用默认值。
+Course scripts use `VlnPlot()`, `FeatureScatter()`, and `subset()`. Example thresholds such as `nCount_RNA <= 25000`, `nFeature_RNA <= 5000`, `percent.mt <= 25`, or `percent.rb <= 40` are not universal defaults. They must be justified against the current dataset.

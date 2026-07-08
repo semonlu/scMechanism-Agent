@@ -10,17 +10,84 @@ from pathlib import Path
 
 
 EXPECTED = {
+    "workflow": ["workflow_step_audit", "pipeline_step_audit"],
+    "input": ["input_diagnosis", "data_input_manifest", "file_manifest", "import_summary", "source_traceability"],
+    "qc": ["qc"],
     "metadata": ["metadata", "meta"],
     "data_manifest": ["data_input_manifest"],
     "data_qc": ["data_analysis_qc"],
+    "normalization": ["normalization", "highly_variable", "hvg", "sctransform", "processed_seurat", "processed.h5ad"],
     "markers": ["marker", "findallmarkers"],
+    "resolution": ["resolution_sweep"],
+    "cluster_audit": ["cluster_marker_audit"],
+    "doublet": ["doublet", "scrublet", "scdblfinder"],
+    "cell_cycle": ["cell_cycle", "s_score", "g2m"],
+    "batch": ["batch", "harmony", "integration", "combat", "bbknn"],
     "annotation": ["annotation_evidence", "singler", "celltypist", "cell_labels"],
     "deg": ["deg", "differential"],
     "enrichment": ["enrich", "kegg", "go_"],
     "cellchat": ["cellchat", "communication", "ligand", "receptor"],
     "pseudotime": ["pseudotime", "monocle", "trajectory"],
     "umap": ["umap"],
+    "pca": ["pca", "elbow"],
+    "tsne": ["tsne"],
 }
+
+
+WORKFLOW_STEPS = [
+    (1, "data_acquisition", "Get data from GEO/SRA or a traceable local/public source", ["input", "data_manifest"], True),
+    (2, "data_import", "Read data and align metadata/barcodes", ["input", "metadata", "data_qc"], True),
+    (3, "quality_control", "QC mitochondrial/red-cell/count/gene/low-quality cells", ["qc"], True),
+    (4, "normalization_scaling_hvg", "Normalize/scale/find variable features or SCT while retaining raw counts", ["normalization"], True),
+    (5, "confounder_review", "Review cell cycle, doublets, batch, ambient RNA, and integration risk", ["doublet", "cell_cycle", "batch"], True),
+    (6, "dimensionality_clustering", "Run/audit PCA, UMAP/tSNE, neighbors, clustering, and resolution", ["pca", "umap", "resolution", "cluster_audit"], True),
+    (7, "cell_annotation", "Cross-check automatic and manual cell annotation", ["annotation"], True),
+    (8, "marker_detection", "Find and review marker genes", ["markers", "cluster_audit"], True),
+    (9, "pseudotime", "Optional lineage/root-approved pseudotime analysis", ["pseudotime"], False),
+    (10, "cell_communication", "Optional annotation-gated CellChat/cell communication analysis", ["cellchat"], False),
+]
+
+
+def workflow_step_audit(found: dict[str, list[Path]]) -> tuple[list[dict[str, str]], list[str], list[str]]:
+    risks: list[str] = []
+    support: list[str] = []
+    rows: list[dict[str, str]] = []
+
+    for step_id, key, description, evidence_keys, core_required in WORKFLOW_STEPS:
+        present_keys = [name for name in evidence_keys if found.get(name)]
+        evidence = []
+        for name in present_keys:
+            evidence.extend(path.name for path in found[name][:3])
+        evidence = list(dict.fromkeys(evidence))
+        if core_required:
+            if present_keys:
+                status = "complete"
+                note = "Evidence detected for this core upstream step."
+                support.append(f"Workflow step {step_id} {key}: evidence detected.")
+            else:
+                status = "missing_evidence"
+                note = "Core upstream step lacks auditable files."
+                risks.append(f"Workflow step {step_id} ({key}) lacks auditable evidence.")
+        else:
+            if present_keys:
+                status = "present_requires_review"
+                note = "Optional downstream module is present; verify approval, scope, and inference-only wording."
+                support.append(f"Workflow step {step_id} {key}: downstream evidence detected.")
+            else:
+                status = "gated_optional_not_run"
+                note = "Optional downstream module not detected; acceptable if not approved or not needed."
+        rows.append(
+            {
+                "step": str(step_id),
+                "workflow_step": key,
+                "required_before_interpretation": "yes" if core_required else "no_optional_gated",
+                "status": status,
+                "description": description,
+                "evidence_files": ";".join(evidence),
+                "review_note": note,
+            }
+        )
+    return rows, support, risks
 
 
 def sniff_rows(path: Path, limit: int = 5000) -> tuple[list[str], list[dict[str, str]]]:
@@ -100,6 +167,17 @@ def main() -> None:
 
     risks: list[str] = []
     support: list[str] = []
+    workflow_rows, workflow_support, workflow_risks = workflow_step_audit(found)
+    support.extend(workflow_support)
+    risks.extend(workflow_risks)
+    workflow_audit_path = root / "tables" / "workflow_step_audit.tsv"
+    workflow_audit_path.parent.mkdir(parents=True, exist_ok=True)
+    with workflow_audit_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(workflow_rows[0]))
+        writer.writeheader()
+        writer.writerows(workflow_rows)
+    found["workflow"] = list(dict.fromkeys([*found.get("workflow", []), workflow_audit_path]))
+
     if not found["data_manifest"]:
         risks.append("No data_input_manifest.json detected; analysis input provenance is incomplete.")
     else:
@@ -156,8 +234,21 @@ def main() -> None:
         f"- Cell annotation status: {ann_status}",
         f"- Allow CellChat/pseudotime proposal: {'yes' if downstream_allowed else 'no'}",
         "",
-        "## Detected Files",
+        "## 10-Step Workflow Audit",
+        "",
+        "| Step | Workflow step | Required before interpretation | Status | Evidence | Review note |",
+        "|---:|---|---|---|---|---|",
     ]
+    for row in workflow_rows:
+        lines.append(
+            f"| {row['step']} | {row['workflow_step']} | {row['required_before_interpretation']} | "
+            f"{row['status']} | {row['evidence_files'] or 'none'} | {row['review_note']} |"
+        )
+
+    lines.extend([
+        "",
+        "## Detected Files",
+    ])
     for key, paths in found.items():
         lines.append(f"- {key}: {len(paths)}")
 

@@ -39,6 +39,36 @@ For Seurat V5 course-derived work, keep the following sequence. Annotation and d
 
 Core functions include `Read10X()`, `Read10X_h5()`, `Matrix::readMM()`, barcode/gene TSV parsing for non-standard 10x, `CreateSeuratObject()`, `PercentageFeatureSet()`, `VlnPlot()`, `FeatureScatter()`, `NormalizeData()`, `FindVariableFeatures()`, `ScaleData()`, `RunPCA()`, optional `RunHarmony()`, `FindNeighbors()`, `FindClusters()`, `RunUMAP()`, and `FindAllMarkers()`.
 
+## Resolution Review
+
+Do not treat `FindClusters(resolution = 0.4)` or any other single value as a universal answer.
+
+For major cell-class annotation, first sweep at least `0.1`, `0.3`, `0.5`, and `0.8`, then review:
+
+1. Cluster count: for typical 10x data with about 5,000 to 20,000 cells, roughly 10 to 20 clusters is often a reasonable major-lineage range. Fewer than about 8 to 10 may miss cell classes; more than about 25 may split one cell type into artificial states.
+2. Marker clarity: top markers should show canonical major-lineage genes. If top markers are dominated by ribosomal, heat-shock, mitochondrial, hemoglobin, stress, or cell-cycle genes, review QC, doublets, and over-clustering before accepting the cluster.
+3. Biological plausibility: clusters should match tissue context and prior biology, and should not be mainly driven by sample, batch, doublet score, or QC metrics.
+
+Required outputs:
+
+```text
+tables/resolution_sweep.tsv
+tables/cluster_marker_audit.tsv
+figures/umap_clusters.pdf
+```
+
+## Subcluster Analysis
+
+Subcluster analysis must not be implemented by only increasing global resolution.
+
+Workflow:
+
+1. Choose a conservative major-lineage resolution and annotate major cell classes.
+2. Subset the target cell class.
+3. Rerun `FindVariableFeatures()`, `ScaleData()`, `RunPCA()`, `FindNeighbors()`, `FindClusters()`, and `RunUMAP()` on the subset object.
+4. Re-check subset markers, doublets, stress, cell cycle, batch, and sample composition.
+5. Save subset parameters and object separately.
+
 ## Guardrails
 
 - Do not keep interactive working-directory selection.

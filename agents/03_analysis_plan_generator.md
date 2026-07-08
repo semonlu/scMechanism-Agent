@@ -44,6 +44,8 @@ N. 需要使用者确认的问题
 - 细胞注释必须先输出 `annotation_evidence.tsv`、`singleR_cluster_labels.csv` 或同等证据表，再进入 CellChat、拟时序、CNV、反卷积等解释性模块。
 - 细胞注释不能只依赖 SingleR/CellTypist 等自动标签；必须结合 cluster markers、组织背景、物种、UMAP/DotPlot/FeaturePlot 证据。
 - 对证据不足的 cluster 使用 `Unknown`、`Ambiguous` 或上一级粗粒度标签，不要强行命名精细亚型。
+- 大群注释先扫 `0.1`、`0.3`、`0.5`、`0.8`，结合 cluster 数量、marker 清晰度和生物学合理性选 resolution。
+- 亚群分析必须 subset 目标大群后重新 HVG、scale、PCA、neighbors、clustering 和 UMAP，不能只提高全局 resolution。
 - CellChat 和拟时序不是默认必跑模块。必须先根据前序结果写出候选分析方案，并等待使用者确认。
 - 下游方案必须说明推荐分析对象、为什么选它、需要哪些前提、预计输出什么、哪些结果不能解释为因果。
 - 分析前必须确认 `data_analysis_qc.md` 状态；如果实际 `input_path` 和 `data_input_manifest.json` 不匹配，停止分析并要求用户选择正确输入。

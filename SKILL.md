@@ -136,6 +136,8 @@ Read references selectively:
 |---|---|
 | `references/supported_geo_formats.md` | GEO/SRA supplementary file or local input format diagnosis. |
 | `references/data_analysis_qc_rules.md` | Synchronizing planned/downloaded/input datasets with actual analysis inputs. |
+| `references/reviewer_qc_rules.md` | Reviewer-style single-cell QC gates, resolution choice, subclustering, unclear cluster review, and downstream interpretation limits. |
+| `references/text_encoding_rules.md` | UTF-8 rules for Chinese pasted text, metadata, scripts, and generated reports. |
 | `references/singlecell_qc_rules.md` | QC threshold planning and result review. |
 | `references/seurat_pipeline_rules.md` | Seurat V5 script generation and course-derived R workflow adaptation. |
 | `references/scanpy_pipeline_rules.md` | h5ad/Scanpy workflow generation. |

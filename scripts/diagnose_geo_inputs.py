@@ -132,7 +132,7 @@ def main() -> None:
 
     items = list(args.items)
     if args.file_list:
-        items.extend(Path(args.file_list).read_text(encoding="utf-8").splitlines())
+        items.extend(Path(args.file_list).read_text(encoding="utf-8-sig").splitlines())
 
     result = classify_files(items)
     Path(args.out_json).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

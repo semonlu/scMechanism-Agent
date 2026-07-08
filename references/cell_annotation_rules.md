@@ -21,6 +21,18 @@ confidence
 review_note
 ```
 
+When available, add these reviewer fields:
+
+```text
+marker_count_vs_all
+relative_de_gene_count
+cell_cycle_warning
+doublet_warning
+stress_warning
+sample_recurrence
+novelty_support
+```
+
 Confidence should use:
 
 - `high`: marker evidence and reference label agree.
@@ -53,6 +65,11 @@ Clusters with low confidence must keep `Unknown`, `Ambiguous`, or a coarse linea
 - If SingleR/CellTypist label conflicts with top markers, prefer marker evidence and mark the cluster for review.
 - If a cluster has mixed lineage markers, mark `Ambiguous` and consider doublet, low-quality cells, or over-clustering.
 - If the study tissue lacks a claimed cell type biologically, mark the label as suspicious and require manual review.
+- If top markers are mostly ribosomal, mitochondrial, hemoglobin, heat-shock, stress, or cell-cycle genes, do not assign a new cell type label without additional evidence.
+- If a cluster is unclear, compare it to neighboring or biologically related clusters when possible. More than about 300 DE genes can justify deeper functional review; fewer than about 100 DE genes usually supports `Unknown`, `Ambiguous`, or merge unless canonical markers are strong.
+- For unclear but plausible clusters, review marker databases and literature before final naming. Suggested sources include CellMarker, PanglaoDB, CellTaxonomy, and tissue-specific papers; record the evidence source and confidence in `annotation_evidence.tsv`.
+- Proliferating clusters should be audited with cell-cycle markers such as `MKI67`, `TOP2A`, `UBE2C`, `CCNB1`, `CCNB2`, and `CENPF`.
+- A claim of a novel cell type requires internally consistent markers, enough cells, at least about 1% of total cells, recurrence across multiple samples, and meaningful functional enrichment. Generic stress or ribosomal signals are not novelty evidence.
 - LLM-assisted annotation may use marker summaries only. Do not send raw expression matrices or private metadata to external APIs.
 
 ## Downstream Gate

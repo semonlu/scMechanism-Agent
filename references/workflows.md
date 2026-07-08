@@ -48,5 +48,6 @@ Every workflow response should include:
 - missing metadata;
 - recommended template/script;
 - expected outputs;
+- required audit tables: `workflow_step_audit.tsv`, `resolution_sweep.tsv`, and `cluster_marker_audit.tsv`;
 - risks and limitations;
 - which claims are observations, statistics, or hypotheses.

@@ -36,7 +36,7 @@ cds <- cluster_cells(cds, cluster_method = "louvain")
 cds <- learn_graph(cds)
 
 if (file.exists(root_cells_file)) {
-  root_cells <- readLines(root_cells_file)
+  root_cells <- readLines(root_cells_file, encoding = "UTF-8")
   cds <- order_cells(cds, root_cells = intersect(root_cells, colnames(cds)))
 } else {
   message("No root cell file found; order_cells() will open an interactive selector in some environments.")

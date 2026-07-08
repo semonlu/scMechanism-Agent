@@ -96,7 +96,7 @@ cds <- cluster_cells(cds, cluster_method = "louvain")
 cds <- learn_graph(cds, use_partition = FALSE)
 
 if (file.exists(root_cells_file)) {
-  root_cells <- readLines(root_cells_file)
+  root_cells <- readLines(root_cells_file, encoding = "UTF-8")
   cds <- order_cells(cds, root_cells = intersect(root_cells, colnames(cds)))
 } else if (nzchar(root_query) && !grepl("^\\{\\{", root_query)) {
   root_keep <- eval(parse(text = root_query), envir = as.data.frame(colData(cds)))
